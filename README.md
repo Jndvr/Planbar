@@ -25,11 +25,10 @@ Planbar combines a fast todo list with daily, weekly, and monthly planning. The 
 - Task dependencies that block completion until prerequisite tasks are done
 - Daily, weekly, and monthly recurring tasks
 - Chrome notifications with configurable lead times
-- Drag and drop between days and for manual sorting
+- Drag and drop between days, for manual sorting, or onto the trash target with undo
 - Quick rescheduling to today, tomorrow, next week, or `+1 day`
 - Automatic detection of overdue tasks
 - Search and filters for open and completed tasks
-- Weekly goals, completion rate, streaks, and most productive weekday
 - Pomodoro focus mode with 25-minute focus sessions and 5-minute breaks
 - Custom categories with individual colors
 - Light and dark themes
@@ -75,7 +74,7 @@ Write report tomorrow 14:30 #Work !high @weekly
 
 ## Dependencies and Archive
 
-Dependencies can be selected while creating or editing a task. A dependent task remains visibly blocked and cannot be completed until all prerequisites are done. Planbar prevents circular dependency chains.
+Dependencies can be selected while creating or editing a task. The compact picker suggests up to eight open, one-time tasks and includes search instead of displaying the entire task database. A dependent task remains visibly blocked and cannot be completed until all prerequisites are done. Planbar prevents circular dependency chains.
 
 Tasks can be archived manually from the edit dialog. The dedicated Archive view keeps them available for restoration without cluttering planning views, search, statistics, or focus mode. Auto-archive can be disabled or configured for completed tasks after 30 or 90 days.
 

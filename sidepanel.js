@@ -20,7 +20,6 @@ const REPEAT_LABELS = {
 const state = {
   tasks: [],
   categories: DEFAULT_CATEGORIES.map((item) => ({ ...item })),
-  weekGoal: 10,
   view: "day",
   selectedDate: todayString(),
   filter: "open",
@@ -62,6 +61,8 @@ const elements = {
   taskNotes: document.querySelector("#taskNotes"),
   smartHint: document.querySelector("#smartHint"),
   subtaskList: document.querySelector("#subtaskList"),
+  dependencySearch: document.querySelector("#dependencySearch"),
+  dependencySummary: document.querySelector("#dependencySummary"),
   dependencyList: document.querySelector("#dependencyList"),
   addSubtask: document.querySelector("#addSubtask"),
   searchButton: document.querySelector("#searchButton"),
@@ -76,7 +77,6 @@ const elements = {
   infoSheet: document.querySelector("#infoSheet"),
   infoBackdrop: document.querySelector("#infoBackdrop"),
   closeInfo: document.querySelector("#closeInfo"),
-  weekGoal: document.querySelector("#weekGoal"),
   languageSelect: document.querySelector("#languageSelect"),
   autoArchiveDays: document.querySelector("#autoArchiveDays"),
   categoryList: document.querySelector("#categoryList"),
@@ -95,12 +95,15 @@ const elements = {
   resetTimer: document.querySelector("#resetTimer"),
   timerTabs: [...document.querySelectorAll("[data-timer-mode]")],
   toast: document.querySelector("#toast"),
+  trashDropZone: document.querySelector("#trashDropZone"),
 };
 
 let toastTimer;
 let draggedTaskId = "";
 let draggedOccurrenceDate = "";
 let storageReloadTimer;
+let dependencySelection = new Set();
+let lastDeletedTask = null;
 
 init();
 
@@ -127,7 +130,6 @@ function applySavedData(saved) {
   state.categories = Array.isArray(saved.categories) && saved.categories.length
     ? saved.categories.map(normalizeCategory)
     : DEFAULT_CATEGORIES.map((item) => ({ ...item }));
-  state.weekGoal = clamp(Number(saved.weekGoal) || 10, 1, 100);
   state.theme = saved.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   const browserLanguage = globalThis.navigator?.language?.toLowerCase().startsWith("en") ? "en" : "de";
   state.language = ["de", "en"].includes(saved.language) ? saved.language : browserLanguage;
@@ -202,6 +204,10 @@ function bindStaticEvents() {
   elements.addSubtask.addEventListener("click", () => addSubtaskRow());
   elements.taskTitle.addEventListener("input", updateSmartHint);
   elements.taskTitle.addEventListener("blur", () => applySmartInput(false));
+  elements.dependencySearch.addEventListener("input", () => {
+    const task = state.tasks.find((item) => item.id === elements.taskId.value);
+    renderDependencyOptions(task, elements.dependencySearch.value);
+  });
   document.querySelectorAll("[data-quick-date]").forEach((button) => {
     button.addEventListener("click", () => applyQuickDate(button.dataset.quickDate));
   });
@@ -220,12 +226,6 @@ function bindStaticEvents() {
   elements.settingsButton.addEventListener("click", openInfo);
   elements.closeInfo.addEventListener("click", closeInfo);
   elements.infoBackdrop.addEventListener("click", closeInfo);
-  elements.weekGoal.addEventListener("change", async () => {
-    state.weekGoal = clamp(Number(elements.weekGoal.value) || 10, 1, 100);
-    elements.weekGoal.value = state.weekGoal;
-    await persist();
-    render();
-  });
   elements.languageSelect.addEventListener("change", async () => {
     state.language = elements.languageSelect.value === "en" ? "en" : "de";
     applyLanguage();
@@ -250,6 +250,24 @@ function bindStaticEvents() {
   elements.startTimer.addEventListener("click", toggleTimer);
   elements.resetTimer.addEventListener("click", resetTimer);
   elements.timerTabs.forEach((button) => button.addEventListener("click", () => setTimerMode(button.dataset.timerMode)));
+  elements.trashDropZone.addEventListener("dragover", (event) => {
+    if (!draggedTaskId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    elements.trashDropZone.classList.add("active");
+    elements.trashDropZone.querySelector("span").textContent = t("drag.deleteActive");
+  });
+  elements.trashDropZone.addEventListener("dragleave", () => {
+    elements.trashDropZone.classList.remove("active");
+    elements.trashDropZone.querySelector("span").textContent = t("drag.delete");
+  });
+  elements.trashDropZone.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = draggedTaskId;
+    clearDragState();
+    if (id) await deleteTaskWithUndo(id);
+  });
 
   document.addEventListener("keydown", (event) => {
     const command = event.metaKey || event.ctrlKey;
@@ -358,7 +376,6 @@ function renderWeekView() {
       ${renderDateControls(`${formatShortDate(monday)} – ${formatShortDate(days[6])}`)}
     </section>
     ${renderWeekStrip(date)}
-    ${renderStats(completed)}
     ${weekItems.length ? renderSummaryCard(weekItems, completed, date, true) : ""}
     <div class="week-groups">${days.map((day) => renderDayGroup(day)).join("")}</div>
   `;
@@ -445,16 +462,6 @@ function renderSummaryCard(items, completed, date, isWeek = false) {
     <strong>${open ? t(open === 1 ? "summary.openOne" : "summary.openMany", { count: open }) : t("summary.done")}</strong>
     <span class="summary-number">${items.length ? Math.round((completed / items.length) * 100) : 0}%</span>
     <p>${high ? t("summary.high", { count: high }) : isWeek ? t("summary.week") : t("summary.pace")}</p>
-  </div>`;
-}
-
-function renderStats(weekCompleted) {
-  const goalPercent = Math.min(100, Math.round((weekCompleted / state.weekGoal) * 100));
-  return `<div class="stats-grid">
-    <div class="stat-card"><strong>${weekCompleted}/${state.weekGoal}</strong><span>${t("stats.goal")}</span><div class="goal-track"><i style="width:${goalPercent}%"></i></div></div>
-    <div class="stat-card"><strong>${completionRate()}%</strong><span>${t("stats.rate")}</span></div>
-    <div class="stat-card"><strong>${calculateStreak()} 🔥</strong><span>${t("stats.streak")}</span></div>
-    <div class="stat-card"><strong>${escapeHtml(bestWeekday())}</strong><span>${t("stats.bestDay")}</span></div>
   </div>`;
 }
 
@@ -558,6 +565,8 @@ function bindDynamicEvents() {
       draggedTaskId = card.dataset.taskId;
       draggedOccurrenceDate = card.dataset.occurrenceDate;
       card.classList.add("dragging");
+      elements.trashDropZone.hidden = false;
+      elements.addButton.hidden = true;
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", draggedTaskId);
     });
@@ -600,6 +609,10 @@ function makeDateDropTarget(element, date) {
 function clearDragState() {
   draggedTaskId = "";
   draggedOccurrenceDate = "";
+  elements.trashDropZone.hidden = true;
+  elements.trashDropZone.classList.remove("active");
+  elements.trashDropZone.querySelector("span").textContent = t("drag.delete");
+  elements.addButton.hidden = false;
   document.querySelectorAll(".drag-over").forEach((item) => item.classList.remove("drag-over"));
 }
 
@@ -665,6 +678,8 @@ function openTaskSheet(id = "") {
   elements.taskNotes.value = task?.notes || "";
   elements.subtaskList.innerHTML = "";
   (task?.subtasks || []).forEach(addSubtaskRow);
+  dependencySelection = new Set(task?.dependencyIds || []);
+  elements.dependencySearch.value = "";
   renderDependencyOptions(task);
   const priority = task?.priority || "medium";
   elements.taskForm.querySelector(`[name="priority"][value="${priority}"]`).checked = true;
@@ -681,14 +696,30 @@ function openTaskSheet(id = "") {
   requestAnimationFrame(() => elements.taskTitle.focus());
 }
 
-function renderDependencyOptions(task) {
-  const selected = new Set(task?.dependencyIds || []);
-  const choices = state.tasks.filter((item) => item.id !== task?.id);
-  elements.dependencyList.innerHTML = choices.length ? choices.map((item) => `<label class="dependency-option"><input type="checkbox" value="${escapeHtml(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${escapeHtml(item.title)}${item.archivedAt ? ` · ${t("nav.archive")}` : ""}</span></label>`).join("") : `<p class="dependency-empty">${t("task.noDependencies")}</p>`;
+function renderDependencyOptions(task, query = "") {
+  const needle = query.trim().toLocaleLowerCase(locale());
+  const choices = state.tasks
+    .filter((item) => item.id !== task?.id)
+    .filter((item) => dependencySelection.has(item.id) || (!item.archivedAt && item.repeat === "none" && !item.completed))
+    .filter((item) => !needle || [item.title, item.notes, categoryLabel(getCategory(item.category))].join(" ").toLocaleLowerCase(locale()).includes(needle))
+    .sort((a, b) => Number(dependencySelection.has(b.id)) - Number(dependencySelection.has(a.id)) || a.date.localeCompare(b.date) || sortTasks(a, b));
+  const visible = needle ? choices.slice(0, 20) : [
+    ...choices.filter((item) => dependencySelection.has(item.id)),
+    ...choices.filter((item) => !dependencySelection.has(item.id)).slice(0, 8),
+  ];
+  elements.dependencySummary.textContent = dependencySelection.size ? t("task.dependenciesSelected", { count: dependencySelection.size }) : "";
+  elements.dependencyList.innerHTML = visible.length ? visible.map((item) => {
+    const status = item.archivedAt ? t("nav.archive") : item.completed ? t("common.done") : `${formatShortDate(parseDate(item.date))} · ${categoryLabel(getCategory(item.category))}`;
+    return `<label class="dependency-option"><input type="checkbox" value="${escapeHtml(item.id)}" ${dependencySelection.has(item.id) ? "checked" : ""}><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(status)}</small></span></label>`;
+  }).join("") : `<p class="dependency-empty">${t("task.noDependencies")}</p>`;
+  elements.dependencyList.querySelectorAll('input[type="checkbox"]').forEach((input) => input.addEventListener("change", () => {
+    input.checked ? dependencySelection.add(input.value) : dependencySelection.delete(input.value);
+    elements.dependencySummary.textContent = dependencySelection.size ? t("task.dependenciesSelected", { count: dependencySelection.size }) : "";
+  }));
 }
 
 function collectDependencyIds() {
-  return [...elements.dependencyList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+  return [...dependencySelection].filter((id) => state.tasks.some((task) => task.id === id));
 }
 
 function wouldCreateCycle(taskId, dependencyIds) {
@@ -782,11 +813,41 @@ async function handleDelete() {
     }, 2500);
     return;
   }
-  state.tasks = state.tasks.filter((task) => task.id !== id);
-  await persist();
   closeTaskSheet();
+  await deleteTaskWithUndo(id);
+}
+
+async function deleteTaskWithUndo(id) {
+  const index = state.tasks.findIndex((task) => task.id === id);
+  if (index < 0) return;
+  const task = state.tasks[index];
+  const dependentSnapshots = state.tasks
+    .filter((item) => (item.dependencyIds || []).includes(id))
+    .map((item) => ({ id: item.id, dependencyIds: [...item.dependencyIds] }));
+  lastDeletedTask = { task, index, dependentSnapshots };
+  state.tasks.splice(index, 1);
+  state.tasks.forEach((item) => {
+    if (!(item.dependencyIds || []).includes(id)) return;
+    item.dependencyIds = item.dependencyIds.filter((dependencyId) => dependencyId !== id);
+    item.updatedAt = Date.now();
+  });
+  await persist();
   render();
-  showToast(t("toast.deleted"));
+  showToast(t("toast.deleted"), { actionLabel: t("action.undo"), action: undoLastDelete, duration: 5000 });
+}
+
+async function undoLastDelete() {
+  if (!lastDeletedTask || state.tasks.some((task) => task.id === lastDeletedTask.task.id)) return;
+  const snapshot = lastDeletedTask;
+  lastDeletedTask = null;
+  state.tasks.splice(Math.min(snapshot.index, state.tasks.length), 0, snapshot.task);
+  snapshot.dependentSnapshots.forEach((dependent) => {
+    const task = state.tasks.find((item) => item.id === dependent.id);
+    if (task) task.dependencyIds = dependent.dependencyIds;
+  });
+  await persist();
+  render();
+  showToast(t("toast.deleteUndone"));
 }
 
 async function archiveCurrentTask() {
@@ -973,50 +1034,6 @@ function sortTasks(a, b) {
   return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1) || a.createdAt - b.createdAt;
 }
 
-function totalCompletedCount() {
-  return state.tasks.filter((task) => !task.archivedAt).reduce((total, task) => total + (task.repeat === "none" ? Number(task.completed) : (task.completionDates || []).length), 0);
-}
-
-function completionRate() {
-  const today = parseDate(todayString());
-  const from = addDays(today, -29);
-  let total = 0;
-  let completed = 0;
-  for (let cursor = from; cursor <= today; cursor = addDays(cursor, 1)) {
-    const value = dateString(cursor);
-    for (const task of state.tasks.filter((item) => !item.archivedAt)) {
-      if (!occursOn(task, value)) continue;
-      total += 1;
-      if (isOccurrenceComplete(task, value)) completed += 1;
-    }
-  }
-  return total ? Math.round((completed / total) * 100) : 0;
-}
-
-function bestWeekday() {
-  const counts = [0, 0, 0, 0, 0, 0, 0];
-  state.tasks.filter((task) => !task.archivedAt).forEach((task) => {
-    if (task.repeat === "none" && task.completed) counts[parseDate(task.date).getDay()] += 1;
-    (task.completionDates || []).forEach((value) => { counts[parseDate(value).getDay()] += 1; });
-  });
-  const best = Math.max(...counts);
-  if (!best) return "–";
-  const index = counts.indexOf(best);
-  return ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][index];
-}
-
-function calculateStreak() {
-  let streak = 0;
-  let cursor = parseDate(todayString());
-  const completedOn = (value) => state.tasks.some((task) => !task.archivedAt && occursOn(task, value) && isOccurrenceComplete(task, value));
-  if (!completedOn(dateString(cursor))) cursor = addDays(cursor, -1);
-  for (let index = 0; index < 365 && completedOn(dateString(cursor)); index += 1) {
-    streak += 1;
-    cursor = addDays(cursor, -1);
-  }
-  return streak;
-}
-
 function openSearch() {
   elements.searchPanel.hidden = false;
   requestAnimationFrame(() => elements.searchInput.focus());
@@ -1070,7 +1087,6 @@ function applyTheme() {
 }
 
 function openInfo() {
-  elements.weekGoal.value = state.weekGoal;
   elements.languageSelect.value = state.language;
   elements.autoArchiveDays.value = String(state.autoArchiveDays);
   renderCategorySettings();
@@ -1151,7 +1167,7 @@ function autoArchiveTasks() {
 }
 
 function exportBackup() {
-  const backup = { version: 3, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays };
+  const backup = { version: 3, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1176,7 +1192,6 @@ async function importBackup(event) {
     });
     state.tasks = [...merged.values()];
     if (Array.isArray(imported.categories) && imported.categories.length) state.categories = imported.categories.map(normalizeCategory);
-    if (imported.weekGoal) state.weekGoal = clamp(Number(imported.weekGoal), 1, 100);
     if (["de", "en"].includes(imported.language)) state.language = imported.language;
     if ([0, 30, 90].includes(Number(imported.autoArchiveDays))) state.autoArchiveDays = Number(imported.autoArchiveDays);
     await persist();
@@ -1273,11 +1288,26 @@ function updateTimerDisplay() {
   elements.timerRing.style.setProperty("--timer-progress", `${focusState.total ? (focusState.remaining / focusState.total) * 360 : 0}deg`);
 }
 
-function showToast(message) {
+function showToast(message, options = {}) {
   clearTimeout(toastTimer);
-  elements.toast.textContent = message;
+  if (options.action && options.actionLabel) {
+    elements.toast.textContent = "";
+    const label = document.createElement("span");
+    label.textContent = message;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = options.actionLabel;
+    button.addEventListener("click", async () => {
+      clearTimeout(toastTimer);
+      elements.toast.classList.remove("show");
+      await options.action();
+    });
+    elements.toast.append(label, button);
+  } else {
+    elements.toast.textContent = message;
+  }
   elements.toast.classList.add("show");
-  toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2200);
+  toastTimer = setTimeout(() => elements.toast.classList.remove("show"), options.duration || 2200);
 }
 
 async function loadData() {
@@ -1300,7 +1330,7 @@ async function loadData() {
 }
 
 async function persist() {
-  const value = { version: 3, tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: Date.now() };
+  const value = { version: 3, tasks: state.tasks, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: Date.now() };
   if (!globalThis.chrome?.storage?.local) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
     return;
@@ -1312,7 +1342,7 @@ async function persist() {
     const staleKeys = Object.keys(sync).filter((key) => key.startsWith(SYNC_TASK_PREFIX) && !taskEntries[key]);
     if (staleKeys.length) await chrome.storage.sync.remove(staleKeys);
     await chrome.storage.sync.set({
-      [SYNC_META_KEY]: { version: 3, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: value.updatedAt },
+      [SYNC_META_KEY]: { version: 3, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: value.updatedAt },
       ...taskEntries,
     });
   } catch (error) {

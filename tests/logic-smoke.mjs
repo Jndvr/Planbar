@@ -89,8 +89,6 @@ assert.equal(run(`elements.taskDate.value`), "2026-08-11");
 
 assert.equal(run(`normalizeTask({title:"Test", date:"2026-08-10", subtasks:[{title:"Schritt", completed:true}]}).subtasks[0].completed`), true);
 assert.equal(run(`isOccurrenceComplete({repeat:"weekly", completionDates:["2026-08-10"]}, "2026-08-10")`), true);
-assert.equal(run(`bestWeekday()`), "–");
-assert.equal(run(`completionRate()`), 0);
 
 assert.equal(run(`normalizeTask({title:"Test", date:"2026-08-10"}).dependencyIds.length`), 0);
 run(`state.tasks = [
@@ -118,5 +116,22 @@ run(`globalThis.chrome = {
 await run(`captureCurrentTab()`);
 assert.equal(run(`state.tasks.at(-1).title`), "Example page");
 assert.equal(run(`state.tasks.at(-1).sourceUrl`), "https://example.com/page");
+
+run(`state.tasks = [
+  normalizeTask({id:"open", title:"Open prerequisite", date:"2026-08-10"}),
+  normalizeTask({id:"done", title:"Completed prerequisite", date:"2026-08-10", completed:true}),
+  normalizeTask({id:"repeat", title:"Repeating task", date:"2026-08-10", repeat:"weekly"}),
+  normalizeTask({id:"dependent", title:"Dependent task", date:"2026-08-11", dependencyIds:["open"]})
+]; dependencySelection = new Set(["open"]); renderDependencyOptions(state.tasks[3])`);
+assert.equal(run(`elements.dependencyList.innerHTML.includes("Open prerequisite")`), true);
+assert.equal(run(`elements.dependencyList.innerHTML.includes("Completed prerequisite")`), false);
+assert.equal(run(`elements.dependencyList.innerHTML.includes("Repeating task")`), false);
+
+await run(`deleteTaskWithUndo("open")`);
+assert.equal(run(`state.tasks.some(task => task.id === "open")`), false);
+assert.equal(run(`state.tasks.find(task => task.id === "dependent").dependencyIds.length`), 0);
+await run(`undoLastDelete()`);
+assert.equal(run(`state.tasks.some(task => task.id === "open")`), true);
+assert.equal(run(`state.tasks.find(task => task.id === "dependent").dependencyIds[0]`), "open");
 
 console.log("Planbar logic smoke tests passed.");

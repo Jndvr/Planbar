@@ -18,7 +18,7 @@
         </button>
         <div class="top-actions">
           <button class="icon-btn" id="saveTabButton" aria-label="Aktuellen Tab als Aufgabe speichern" title="Aktuellen Tab als Aufgabe speichern" data-i18n-aria="action.saveTab" data-i18n-title="action.saveTab">
-            <svg viewBox="0 0 24 24"><path d="M10 7H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3"/><path d="M14 5h5v5M19 5l-8 8"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M4 7.5h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-10Z"/><path d="M4 7.5 6 4.5h12l2 3M12 10v6m-3-3h6"/></svg>
           </button>
           <button class="icon-btn" id="focusButton" aria-label="Fokusmodus öffnen" title="Fokusmodus" data-i18n-aria="action.focus" data-i18n-title="action.focus">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
@@ -57,6 +57,10 @@
         <span data-i18n="task.add">Aufgabe</span>
         <kbd>⌘↵</kbd>
       </button>
+      <div class="drag-trash" id="trashDropZone" hidden aria-label="Aufgabe löschen" data-i18n-aria="drag.delete">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6"/></svg>
+        <span data-i18n="drag.delete">Zum Löschen hier ablegen</span>
+      </div>
     </div>
 
     <div class="sheet-backdrop" id="taskBackdrop" hidden></div>
@@ -148,7 +152,12 @@
         </div>
 
         <div class="dependency-field">
-          <div class="dependency-head"><span data-i18n="task.dependencies">Abhängigkeiten</span><small data-i18n="task.dependenciesHelp">Diese Aufgaben müssen zuerst erledigt werden.</small></div>
+          <div class="dependency-head"><span data-i18n="task.dependencies">Abhängigkeiten</span><small data-i18n="task.dependenciesHelp">Wähle offene Einzelaufgaben, die zuerst erledigt werden müssen.</small></div>
+          <div class="dependency-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="dependencySearch" type="search" autocomplete="off" placeholder="Offene Aufgaben suchen …" data-i18n-placeholder="task.dependenciesSearch" />
+          </div>
+          <small class="dependency-summary" id="dependencySummary"></small>
           <div id="dependencyList"></div>
         </div>
 
@@ -182,10 +191,6 @@
       <div class="settings-block">
         <div class="settings-title"><strong data-i18n="settings.autoArchive">Automatisch archivieren</strong><span data-i18n="settings.autoArchiveDesc">Erledigte Aufgaben nach einer Frist ausblenden</span></div>
         <select id="autoArchiveDays"><option value="0" data-i18n="archive.never">Nie</option><option value="30" data-i18n="archive.30days">Nach 30 Tagen</option><option value="90" data-i18n="archive.90days">Nach 90 Tagen</option></select>
-      </div>
-      <div class="settings-block">
-        <div class="settings-title"><strong data-i18n="settings.weekGoal">Wochenziel</strong><span data-i18n="settings.weekGoalDesc">Erledigte Aufgaben pro Woche</span></div>
-        <input id="weekGoal" type="number" min="1" max="100" value="10" />
       </div>
       <div class="category-settings">
         <div class="settings-title"><strong data-i18n="settings.categories">Eigene Bereiche</strong><span data-i18n="settings.categoriesDesc">Name und Farbe anpassen</span></div>
