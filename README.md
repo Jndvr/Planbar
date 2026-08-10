@@ -22,6 +22,7 @@ Planbar combines a fast todo list with daily, weekly, and monthly planning. The 
 - Side Panel and full-tab modes
 - Dates, times, priorities, categories, and notes
 - Subtasks with individual progress
+- Task dependencies that block completion until prerequisite tasks are done
 - Daily, weekly, and monthly recurring tasks
 - Chrome notifications with configurable lead times
 - Drag and drop between days and for manual sorting
@@ -33,6 +34,9 @@ Planbar combines a fast todo list with daily, weekly, and monthly planning. The 
 - Custom categories with individual colors
 - Light and dark themes
 - JSON backup and import
+- Manual archive and optional auto-archive after 30 or 90 days
+- German and English interfaces, including bilingual Smart Input
+- Save the most recently used browser tab as a task, including its source URL
 - Capture selected webpage text through the context menu
 - Local storage with optional Chrome Sync
 
@@ -53,22 +57,31 @@ After an update, reload the extension once from `chrome://extensions`. Chrome ma
 
 ## Smart Input
 
-Planbar recognizes planning details directly in a task title:
+Planbar recognizes planning details directly in a task title in German or English:
 
 ```text
 Write report morgen 14:30 #Arbeit !hoch @wöchentlich
+Write report tomorrow 14:30 #Work !high @weekly
 ```
 
-The current smart-input keywords use German syntax because the extension interface is German:
-
-| Input | Meaning |
+| German / English input | Meaning |
 | --- | --- |
-| `heute`, `morgen`, `übermorgen` | Relative date |
-| `montag` through `sonntag` | Next matching weekday |
+| `heute`, `morgen`, `übermorgen` / `today`, `tomorrow` | Relative date |
+| `montag` through `sonntag` / `monday` through `sunday` | Next matching weekday |
 | `14:30` | Time |
-| `#Arbeit` | Category |
-| `!hoch`, `!mittel`, `!niedrig` | Priority |
-| `@täglich`, `@wöchentlich`, `@monatlich` | Recurrence |
+| `#Arbeit` / `#Work` | Category |
+| `!hoch`, `!mittel`, `!niedrig` / `!high`, `!medium`, `!low` | Priority |
+| `@täglich`, `@wöchentlich`, `@monatlich` / `@daily`, `@weekly`, `@monthly` | Recurrence |
+
+## Dependencies and Archive
+
+Dependencies can be selected while creating or editing a task. A dependent task remains visibly blocked and cannot be completed until all prerequisites are done. Planbar prevents circular dependency chains.
+
+Tasks can be archived manually from the edit dialog. The dedicated Archive view keeps them available for restoration without cluttering planning views, search, statistics, or focus mode. Auto-archive can be disabled or configured for completed tasks after 30 or 90 days.
+
+## Save a Browser Tab
+
+Use the tab button in Planbar's header to turn the most recently used regular browser tab into a task for today. The page title becomes the task title, and the full URL is saved in the notes. Internal browser and extension pages are excluded.
 
 ## Reminders
 
@@ -100,8 +113,9 @@ Chrome may assign a different extension ID when the unpacked extension is instal
 | `notifications` | Task reminders and focus timer alerts |
 | `alarms` | Reliable time-based reminder scheduling |
 | `contextMenus` | Capture selected text as a task |
+| `tabs` | Read the title and URL of the tab you explicitly save as a task |
 
-Planbar does not request access to your browsing history or the contents of open webpages.
+Planbar does not read page contents or store browsing history. Tab metadata is accessed only when you use the save-tab button.
 
 ## Keyboard Shortcuts
 
@@ -128,6 +142,7 @@ npm run check
 assets/             Icons and source assets
 tests/              Logic and background service tests
 background.js       Service worker, reminders, and context menu
+i18n.js             German and English interface strings
 manifest.json       Chrome Manifest V3 configuration
 sidepanel.html      Extension interface
 sidepanel.js        Planning, persistence, and interactions

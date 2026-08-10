@@ -1,13 +1,14 @@
 const STORAGE_KEY = "planbarData";
 const SYNC_META_KEY = "planbarMeta";
 const SYNC_TASK_PREFIX = "planbarTask_";
+const { t: translate, apply: applyTranslations } = globalThis.PlanbarI18n;
 
 const DEFAULT_CATEGORIES = [
-  { id: "work", label: "Arbeit", color: "#4f8b69" },
-  { id: "personal", label: "Privat", color: "#8b6fb0" },
-  { id: "health", label: "Gesundheit", color: "#d66f64" },
-  { id: "learning", label: "Lernen", color: "#4f83b8" },
-  { id: "other", label: "Sonstiges", color: "#9a8c70" },
+  { id: "work", label: "Arbeit", color: "#4f8b69", isDefault: true },
+  { id: "personal", label: "Privat", color: "#8b6fb0", isDefault: true },
+  { id: "health", label: "Gesundheit", color: "#d66f64", isDefault: true },
+  { id: "learning", label: "Lernen", color: "#4f83b8", isDefault: true },
+  { id: "other", label: "Sonstiges", color: "#9a8c70", isDefault: true },
 ];
 
 const REPEAT_LABELS = {
@@ -25,6 +26,8 @@ const state = {
   filter: "open",
   search: "",
   theme: "light",
+  language: "de",
+  autoArchiveDays: 30,
 };
 
 const focusState = {
@@ -40,12 +43,15 @@ const elements = {
   main: document.querySelector("#mainContent"),
   tabs: [...document.querySelectorAll(".view-tab")],
   addButton: document.querySelector("#addButton"),
+  saveTabButton: document.querySelector("#saveTabButton"),
   taskSheet: document.querySelector("#taskSheet"),
   taskBackdrop: document.querySelector("#taskBackdrop"),
   taskForm: document.querySelector("#taskForm"),
   sheetTitle: document.querySelector("#sheetTitle"),
   closeSheet: document.querySelector("#closeSheet"),
   deleteTask: document.querySelector("#deleteTask"),
+  archiveTask: document.querySelector("#archiveTask"),
+  restoreTask: document.querySelector("#restoreTask"),
   taskId: document.querySelector("#taskId"),
   taskTitle: document.querySelector("#taskTitle"),
   taskDate: document.querySelector("#taskDate"),
@@ -56,6 +62,7 @@ const elements = {
   taskNotes: document.querySelector("#taskNotes"),
   smartHint: document.querySelector("#smartHint"),
   subtaskList: document.querySelector("#subtaskList"),
+  dependencyList: document.querySelector("#dependencyList"),
   addSubtask: document.querySelector("#addSubtask"),
   searchButton: document.querySelector("#searchButton"),
   focusButton: document.querySelector("#focusButton"),
@@ -70,6 +77,8 @@ const elements = {
   infoBackdrop: document.querySelector("#infoBackdrop"),
   closeInfo: document.querySelector("#closeInfo"),
   weekGoal: document.querySelector("#weekGoal"),
+  languageSelect: document.querySelector("#languageSelect"),
+  autoArchiveDays: document.querySelector("#autoArchiveDays"),
   categoryList: document.querySelector("#categoryList"),
   addCategory: document.querySelector("#addCategory"),
   exportData: document.querySelector("#exportData"),
@@ -103,6 +112,8 @@ async function init() {
   applySavedData(saved);
   if (params.get("date")) state.selectedDate = params.get("date");
   applyTheme();
+  applyLanguage();
+  autoArchiveTasks();
   populateCategorySelect();
   bindStaticEvents();
   bindStorageUpdates();
@@ -118,13 +129,16 @@ function applySavedData(saved) {
     : DEFAULT_CATEGORIES.map((item) => ({ ...item }));
   state.weekGoal = clamp(Number(saved.weekGoal) || 10, 1, 100);
   state.theme = saved.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const browserLanguage = globalThis.navigator?.language?.toLowerCase().startsWith("en") ? "en" : "de";
+  state.language = ["de", "en"].includes(saved.language) ? saved.language : browserLanguage;
+  state.autoArchiveDays = [0, 30, 90].includes(Number(saved.autoArchiveDays)) ? Number(saved.autoArchiveDays) : 30;
 }
 
 function normalizeTask(task) {
   return {
     ...task,
     id: task.id || crypto.randomUUID(),
-    title: String(task.title || "Unbenannte Aufgabe").slice(0, 120),
+    title: String(task.title || "Untitled task").slice(0, 120),
     date: task.date || todayString(),
     time: task.time || "",
     priority: ["low", "medium", "high"].includes(task.priority) ? task.priority : "medium",
@@ -139,6 +153,8 @@ function normalizeTask(task) {
     })).filter((item) => item.title) : [],
     completed: Boolean(task.completed),
     completionDates: Array.isArray(task.completionDates) ? task.completionDates : [],
+    dependencyIds: Array.isArray(task.dependencyIds) ? [...new Set(task.dependencyIds.map(String))] : [],
+    archivedAt: task.archivedAt ? Number(task.archivedAt) : null,
     createdAt: Number(task.createdAt) || Date.now(),
     updatedAt: Number(task.updatedAt) || Date.now(),
   };
@@ -149,7 +165,18 @@ function normalizeCategory(category) {
     id: String(category.id || crypto.randomUUID()),
     label: String(category.label || "Bereich").slice(0, 32),
     color: validColor(category.color) ? category.color : "#4f8b69",
+    isDefault: Boolean(category.isDefault || DEFAULT_CATEGORIES.some((item) => item.id === category.id)),
   };
+}
+
+function t(key, values = {}) { return translate(key, values, state.language); }
+function locale() { return state.language === "en" ? "en-US" : "de-DE"; }
+function categoryLabel(category) { return category?.isDefault ? t(`category.${category.id}`) : category?.label || t("category.other"); }
+
+function applyLanguage() {
+  applyTranslations(document, state.language);
+  elements.languageSelect.value = state.language;
+  elements.autoArchiveDays.value = String(state.autoArchiveDays);
 }
 
 function bindStaticEvents() {
@@ -165,10 +192,13 @@ function bindStaticEvents() {
   });
 
   elements.addButton.addEventListener("click", () => openTaskSheet());
+  elements.saveTabButton.addEventListener("click", captureCurrentTab);
   elements.closeSheet.addEventListener("click", closeTaskSheet);
   elements.taskBackdrop.addEventListener("click", closeTaskSheet);
   elements.taskForm.addEventListener("submit", saveTaskFromForm);
   elements.deleteTask.addEventListener("click", handleDelete);
+  elements.archiveTask.addEventListener("click", archiveCurrentTask);
+  elements.restoreTask.addEventListener("click", restoreCurrentTask);
   elements.addSubtask.addEventListener("click", () => addSubtaskRow());
   elements.taskTitle.addEventListener("input", updateSmartHint);
   elements.taskTitle.addEventListener("blur", () => applySmartInput(false));
@@ -181,7 +211,7 @@ function bindStaticEvents() {
   elements.openTabButton.addEventListener("click", openFullTab);
   elements.clearSearch.addEventListener("click", closeSearch);
   elements.searchInput.addEventListener("input", (event) => {
-    state.search = event.target.value.trim().toLocaleLowerCase("de");
+    state.search = event.target.value.trim().toLocaleLowerCase(locale());
     render();
   });
   elements.themeButton.addEventListener("click", toggleTheme);
@@ -193,6 +223,20 @@ function bindStaticEvents() {
   elements.weekGoal.addEventListener("change", async () => {
     state.weekGoal = clamp(Number(elements.weekGoal.value) || 10, 1, 100);
     elements.weekGoal.value = state.weekGoal;
+    await persist();
+    render();
+  });
+  elements.languageSelect.addEventListener("change", async () => {
+    state.language = elements.languageSelect.value === "en" ? "en" : "de";
+    applyLanguage();
+    populateCategorySelect();
+    renderCategorySettings();
+    await persist();
+    render();
+  });
+  elements.autoArchiveDays.addEventListener("change", async () => {
+    state.autoArchiveDays = [0, 30, 90].includes(Number(elements.autoArchiveDays.value)) ? Number(elements.autoArchiveDays.value) : 30;
+    autoArchiveTasks();
     await persist();
     render();
   });
@@ -235,6 +279,8 @@ function bindStorageUpdates() {
       const currentStamp = Math.max(0, ...state.tasks.map((task) => Number(task.updatedAt) || 0));
       if ((incoming.tasks || []).length !== state.tasks.length || incomingStamp > currentStamp) {
         applySavedData(incoming);
+        applyTheme();
+        applyLanguage();
         populateCategorySelect();
         render();
       }
@@ -244,6 +290,7 @@ function bindStorageUpdates() {
       storageReloadTimer = setTimeout(async () => {
         const saved = await loadData();
         applySavedData(saved);
+        applyLanguage();
         populateCategorySelect();
         applyTheme();
         render();
@@ -254,7 +301,8 @@ function bindStorageUpdates() {
 
 function render() {
   if (state.search) return renderSearchResults();
-  if (state.view === "week") renderWeekView();
+  if (state.view === "archive") renderArchiveView();
+  else if (state.view === "week") renderWeekView();
   else if (state.view === "month") renderMonthView();
   else renderDayView();
 }
@@ -283,7 +331,7 @@ function renderDayView() {
     ${renderWeekStrip(date)}
     ${overdue.length && state.filter !== "done" ? renderOverdue(overdue) : ""}
     ${all.length ? renderSummaryCard(all, completed, date) : ""}
-    ${renderListSection(filtered, all.length, "Aufgaben")}
+    ${renderListSection(filtered, all.length, t("section.tasks"))}
   `;
   bindDynamicEvents();
 }
@@ -301,9 +349,9 @@ function renderWeekView() {
     <section class="hero">
       <div class="hero-top">
         <div>
-          <p class="eyebrow">KALENDERWOCHE ${weekNumber}</p>
-          <h1>Deine Woche</h1>
-          <p class="hero-subtitle">${weekItems.length ? `${completed} von ${weekItems.length} Aufgaben erledigt` : "Noch ist diese Woche ganz frei."}</p>
+          <p class="eyebrow">${t("week.label", { number: weekNumber })}</p>
+          <h1>${t("week.title")}</h1>
+          <p class="hero-subtitle">${weekItems.length ? t("week.progress", { done: completed, total: weekItems.length }) : t("week.free")}</p>
         </div>
         <div class="progress-ring" style="--progress:${percent * 3.6}deg"><span>${percent}%</span></div>
       </div>
@@ -329,16 +377,16 @@ function renderMonthView() {
     <section class="hero">
       <div class="hero-top">
         <div>
-          <p class="eyebrow">MONATSPLANUNG</p>
-          <h1>${capitalize(first.toLocaleDateString("de-DE", { month: "long" }))}</h1>
-          <p class="hero-subtitle">Plane mit Überblick und bleib flexibel.</p>
+          <p class="eyebrow">${t("month.label")}</p>
+          <h1>${capitalize(first.toLocaleDateString(locale(), { month: "long" }))}</h1>
+          <p class="hero-subtitle">${t("month.subtitle")}</p>
         </div>
         <div class="summary-number">${first.getFullYear()}</div>
       </div>
-      ${renderDateControls(first.toLocaleDateString("de-DE", { month: "long", year: "numeric" }))}
+      ${renderDateControls(first.toLocaleDateString(locale(), { month: "long", year: "numeric" }))}
     </section>
     <div class="month-grid" role="grid" aria-label="Monatskalender">
-      ${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => `<div class="month-weekday">${day}</div>`).join("")}
+      ${Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(new Date()), index).toLocaleDateString(locale(), { weekday: "short" }).replace(".", "")).map((day) => `<div class="month-weekday">${day}</div>`).join("")}
       ${days.map((day) => renderMonthDay(day, selected)).join("")}
     </div>
     ${renderListSection(filtered, selectedItems.length, formatAgendaTitle(selected))}
@@ -348,25 +396,32 @@ function renderMonthView() {
 
 function renderSearchResults() {
   const results = state.tasks
-    .filter((task) => [task.title, task.notes, getCategory(task.category)?.label, ...(task.subtasks || []).map((item) => item.title)].join(" ").toLocaleLowerCase("de").includes(state.search))
+    .filter((task) => !task.archivedAt && [task.title, task.notes, categoryLabel(getCategory(task.category)), ...(task.subtasks || []).map((item) => item.title)].join(" ").toLocaleLowerCase(locale()).includes(state.search))
     .sort(sortTasks)
     .map((task) => ({ task, occurrenceDate: task.date }));
   elements.main.innerHTML = `
     <section class="hero">
-      <p class="eyebrow">SUCHE</p>
-      <h1>${results.length} Treffer</h1>
-      <p class="hero-subtitle">Ergebnisse für „${escapeHtml(elements.searchInput.value.trim())}“</p>
+      <p class="eyebrow">${t("search.title")}</p>
+      <h1>${t("search.results", { count: results.length })}</h1>
+      <p class="hero-subtitle">${t("search.for", { query: escapeHtml(elements.searchInput.value.trim()) })}</p>
     </section>
-    <div class="task-list">${results.length ? results.map(renderTaskCard).join("") : renderEmpty("Keine Treffer", "Versuche es mit einem anderen Begriff oder Bereich.")}</div>`;
+    <div class="task-list">${results.length ? results.map(renderTaskCard).join("") : renderEmpty(t("search.none"), t("search.try"))}</div>`;
+  bindDynamicEvents();
+}
+
+function renderArchiveView() {
+  const archived = state.tasks.filter((task) => task.archivedAt).sort((a, b) => b.archivedAt - a.archivedAt);
+  elements.main.innerHTML = `<section class="hero"><p class="eyebrow">${t("nav.archive").toUpperCase()}</p><h1>${t("archive.title")}</h1><p class="hero-subtitle">${t("archive.subtitle")}</p></section>
+    <div class="task-list">${archived.length ? archived.map((task) => renderTaskCard({ task, occurrenceDate: task.date })).join("") : renderEmpty(t("archive.empty"), t("archive.emptyText"))}</div>`;
   bindDynamicEvents();
 }
 
 function renderDateControls(label) {
   return `<div class="date-controls">
-    <button class="nav-btn" data-nav="prev" aria-label="Zurück">‹</button>
+    <button class="nav-btn" data-nav="prev" aria-label="Previous">‹</button>
     <span class="date-label">${escapeHtml(label)}</span>
-    <button class="today-btn" data-nav="today">Heute</button>
-    <button class="nav-btn" data-nav="next" aria-label="Weiter">›</button>
+    <button class="today-btn" data-nav="today">${t("common.today")}</button>
+    <button class="nav-btn" data-nav="next" aria-label="Next">›</button>
   </div>`;
 }
 
@@ -377,7 +432,7 @@ function renderWeekStrip(selected) {
     const value = dateString(day);
     const hasTasks = occurrencesForDate(value).length > 0;
     return `<button class="day-pill ${sameDay(day, selected) ? "selected" : ""} ${value === todayString() ? "today" : ""}" data-date="${value}">
-      <span class="weekday">${day.toLocaleDateString("de-DE", { weekday: "short" }).replace(".", "")}</span>
+      <span class="weekday">${day.toLocaleDateString(locale(), { weekday: "short" }).replace(".", "")}</span>
       <span class="day-number">${day.getDate()}</span>${hasTasks ? '<span class="day-dot"></span>' : ""}
     </button>`;
   }).join("")}</div>`;
@@ -387,44 +442,44 @@ function renderSummaryCard(items, completed, date, isWeek = false) {
   const open = items.length - completed;
   const high = items.filter((item) => item.task.priority === "high" && !isOccurrenceComplete(item.task, item.occurrenceDate || dateString(date))).length;
   return `<div class="summary-card">
-    <strong>${open ? `${open} ${open === 1 ? "Aufgabe" : "Aufgaben"} offen` : "Alles geschafft!"}</strong>
+    <strong>${open ? t(open === 1 ? "summary.openOne" : "summary.openMany", { count: open }) : t("summary.done")}</strong>
     <span class="summary-number">${items.length ? Math.round((completed / items.length) * 100) : 0}%</span>
-    <p>${high ? `${high} mit hoher Priorität` : isWeek ? "Guter Überblick für die ganze Woche" : "Du bestimmst das Tempo"}</p>
+    <p>${high ? t("summary.high", { count: high }) : isWeek ? t("summary.week") : t("summary.pace")}</p>
   </div>`;
 }
 
 function renderStats(weekCompleted) {
   const goalPercent = Math.min(100, Math.round((weekCompleted / state.weekGoal) * 100));
   return `<div class="stats-grid">
-    <div class="stat-card"><strong>${weekCompleted}/${state.weekGoal}</strong><span>Wochenziel</span><div class="goal-track"><i style="width:${goalPercent}%"></i></div></div>
-    <div class="stat-card"><strong>${completionRate()}%</strong><span>Erledigungsquote</span></div>
-    <div class="stat-card"><strong>${calculateStreak()} 🔥</strong><span>Tage in Folge</span></div>
-    <div class="stat-card"><strong>${escapeHtml(bestWeekday())}</strong><span>Stärkster Wochentag</span></div>
+    <div class="stat-card"><strong>${weekCompleted}/${state.weekGoal}</strong><span>${t("stats.goal")}</span><div class="goal-track"><i style="width:${goalPercent}%"></i></div></div>
+    <div class="stat-card"><strong>${completionRate()}%</strong><span>${t("stats.rate")}</span></div>
+    <div class="stat-card"><strong>${calculateStreak()} 🔥</strong><span>${t("stats.streak")}</span></div>
+    <div class="stat-card"><strong>${escapeHtml(bestWeekday())}</strong><span>${t("stats.bestDay")}</span></div>
   </div>`;
 }
 
 function renderOverdue(items) {
   return `<section class="overdue-block">
-    <div class="section-head"><div><h2>Überfällig</h2><span class="task-count">${items.length} neu einplanen</span></div></div>
+    <div class="section-head"><div><h2>${t("overdue.title")}</h2><span class="task-count">${t("overdue.reschedule", { count: items.length })}</span></div></div>
     <div class="task-list">${items.map((item) => renderTaskCard(item)).join("")}</div>
   </section>`;
 }
 
 function renderListSection(items, total, title) {
   return `<div class="section-head">
-      <div><h2>${escapeHtml(title)}</h2><span class="task-count">${total} insgesamt</span></div>${renderFilters()}
+      <div><h2>${escapeHtml(title)}</h2><span class="task-count">${total} ${t("common.total")}</span></div>${renderFilters()}
     </div>
     <div class="task-list">${items.length ? items.map(renderTaskCard).join("") : renderEmpty(
-      state.filter === "done" ? "Noch nichts erledigt" : state.filter === "all" && total === 0 ? "Freier Tag" : "Alles erledigt",
-      state.filter === "done" ? "Abgehakte Aufgaben erscheinen später hier." : total === 0 ? "Genieße den Freiraum oder plane eine neue Aufgabe." : "Stark! Du hast für diesen Zeitraum alles geschafft."
+      state.filter === "done" ? t("empty.noDone") : state.filter === "all" && total === 0 ? t("empty.free") : t("empty.allDone"),
+      state.filter === "done" ? t("empty.doneLater") : total === 0 ? t("empty.plan") : t("empty.strong")
     )}</div>`;
 }
 
 function renderFilters() {
   return `<div class="filter-row" aria-label="Aufgaben filtern">
-    <button class="filter-chip ${state.filter === "open" ? "active" : ""}" data-filter="open">Offen</button>
-    <button class="filter-chip ${state.filter === "all" ? "active" : ""}" data-filter="all">Alle</button>
-    <button class="filter-chip ${state.filter === "done" ? "active" : ""}" data-filter="done">Erledigt</button>
+    <button class="filter-chip ${state.filter === "open" ? "active" : ""}" data-filter="open">${t("common.open")}</button>
+    <button class="filter-chip ${state.filter === "all" ? "active" : ""}" data-filter="all">${t("common.all")}</button>
+    <button class="filter-chip ${state.filter === "done" ? "active" : ""}" data-filter="done">${t("common.done")}</button>
   </div>`;
 }
 
@@ -434,10 +489,10 @@ function renderDayGroup(day) {
   const filtered = filterOccurrences(all, value);
   if (!all.length && value !== state.selectedDate) return "";
   return `<div class="section-head">
-      <div><h2>${value === todayString() ? "Heute" : capitalize(day.toLocaleDateString("de-DE", { weekday: "long" }))}</h2><span class="task-count">${formatShortDate(day)}</span></div>
+      <div><h2>${value === todayString() ? t("common.today") : capitalize(day.toLocaleDateString(locale(), { weekday: "long" }))}</h2><span class="task-count">${formatShortDate(day)}</span></div>
       ${value === state.selectedDate ? renderFilters() : ""}
     </div>
-    <div class="task-list" data-drop-date="${value}">${filtered.length ? filtered.map((item) => renderTaskCard({ ...item, occurrenceDate: value })).join("") : renderEmpty("Freier Tag", "Ziehe eine Aufgabe hierher oder plane eine neue.")}</div>`;
+    <div class="task-list" data-drop-date="${value}">${filtered.length ? filtered.map((item) => renderTaskCard({ ...item, occurrenceDate: value })).join("") : renderEmpty(t("empty.free"), t("empty.drag"))}</div>`;
 }
 
 function renderMonthDay(day, selected) {
@@ -452,20 +507,23 @@ function renderTaskCard(item) {
   const task = item.task;
   const occurrenceDate = item.occurrenceDate || task.date;
   const completed = isOccurrenceComplete(task, occurrenceDate);
-  const overdue = !completed && occurrenceDate < todayString();
-  const time = task.time ? `${task.time} Uhr` : "Ganztägig";
+  const archived = Boolean(task.archivedAt);
+  const overdue = !archived && !completed && occurrenceDate < todayString();
+  const unresolved = archived ? [] : unresolvedDependencies(task, occurrenceDate);
+  const time = task.time ? `${task.time}${state.language === "de" ? ` ${t("common.at")}` : ""}` : t("common.allDay");
   const category = getCategory(task.category);
-  const repeat = task.repeat !== "none" ? `<span class="meta-dot"></span><span class="repeat-icon">↻ ${REPEAT_LABELS[task.repeat]}</span>` : "";
-  const dateMeta = state.search || overdue ? `<span class="meta-dot"></span><span class="${overdue ? "overdue-label" : ""}">${overdue ? "Überfällig · " : ""}${formatShortDate(parseDate(occurrenceDate))}</span>` : "";
+  const repeat = task.repeat !== "none" ? `<span class="meta-dot"></span><span class="repeat-icon">${t("task.repeatMeta", { value: t(`repeat.${task.repeat}`) })}</span>` : "";
+  const dateMeta = state.search || overdue || archived ? `<span class="meta-dot"></span><span class="${overdue ? "overdue-label" : ""}">${overdue ? `${t("task.overdue")} · ` : ""}${formatShortDate(parseDate(occurrenceDate))}</span>` : "";
   const subtaskDone = (task.subtasks || []).filter((subtask) => subtask.completed).length;
-  const subtaskMeta = task.subtasks?.length ? `<span class="meta-dot"></span><span class="subtask-progress">${subtaskDone}/${task.subtasks.length} Schritte</span>` : "";
-  return `<article class="task-card priority-${task.priority} ${completed ? "completed" : ""} ${overdue ? "overdue" : ""}" draggable="true" data-task-id="${task.id}" data-occurrence-date="${occurrenceDate}">
-    <button class="check-button" aria-label="${completed ? "Als offen markieren" : "Aufgabe abhaken"}"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></button>
+  const subtaskMeta = task.subtasks?.length ? `<span class="meta-dot"></span><span class="subtask-progress">${t("task.steps", { done: subtaskDone, total: task.subtasks.length })}</span>` : "";
+  const blockedMeta = unresolved.length ? `<span class="meta-dot"></span><span class="blocked-label">${t("task.blocked", { count: unresolved.length })}</span>` : "";
+  return `<article class="task-card priority-${task.priority} ${completed ? "completed" : ""} ${overdue ? "overdue" : ""} ${unresolved.length ? "blocked" : ""} ${archived ? "archived" : ""}" draggable="${archived ? "false" : "true"}" data-task-id="${task.id}" data-occurrence-date="${occurrenceDate}">
+    <button class="check-button" aria-label="${completed ? t("common.open") : t("common.done")}"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></button>
     <button class="task-body">
       <span class="task-title">${escapeHtml(task.title)}</span>
-      <span class="task-meta"><span>${escapeHtml(time)}</span><span class="meta-dot"></span><i class="category-swatch" style="--category-color:${validColor(category?.color) ? category.color : "#4f8b69"}"></i><span class="category-tag">${escapeHtml(category?.label || "Sonstiges")}</span>${repeat}${subtaskMeta}${dateMeta}</span>
+      <span class="task-meta"><span>${escapeHtml(time)}</span><span class="meta-dot"></span><i class="category-swatch" style="--category-color:${validColor(category?.color) ? category.color : "#4f8b69"}"></i><span class="category-tag">${escapeHtml(categoryLabel(category))}</span>${repeat}${subtaskMeta}${blockedMeta}${dateMeta}</span>
     </button>
-    <div class="card-actions">${overdue ? `<button class="postpone-btn" data-postpone="${task.id}" title="Auf morgen verschieben">Morgen</button>` : ""}<button class="more-button" aria-label="Aufgabe bearbeiten"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+    <div class="card-actions">${archived ? `<button class="postpone-btn" data-restore="${task.id}">${t("common.restore")}</button>` : overdue ? `<button class="postpone-btn" data-postpone="${task.id}" title="${t("quick.tomorrow")}">${t("quick.tomorrow")}</button>` : ""}<button class="more-button" aria-label="${t("task.edit")}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
   </article>`;
 }
 
@@ -489,10 +547,13 @@ function bindDynamicEvents() {
     render();
   }));
   elements.main.querySelectorAll(".task-card").forEach((card) => {
-    card.querySelector(".check-button").addEventListener("click", () => toggleTask(card.dataset.taskId, card.dataset.occurrenceDate));
+    const task = state.tasks.find((item) => item.id === card.dataset.taskId);
+    if (!task?.archivedAt) card.querySelector(".check-button").addEventListener("click", () => toggleTask(card.dataset.taskId, card.dataset.occurrenceDate));
     card.querySelector(".task-body").addEventListener("click", () => openTaskSheet(card.dataset.taskId));
     card.querySelector(".more-button").addEventListener("click", () => openTaskSheet(card.dataset.taskId));
     card.querySelector("[data-postpone]")?.addEventListener("click", () => postponeTask(card.dataset.taskId));
+    card.querySelector("[data-restore]")?.addEventListener("click", () => restoreTaskById(card.dataset.taskId));
+    if (task?.archivedAt) return;
     card.addEventListener("dragstart", (event) => {
       draggedTaskId = card.dataset.taskId;
       draggedOccurrenceDate = card.dataset.occurrenceDate;
@@ -604,17 +665,50 @@ function openTaskSheet(id = "") {
   elements.taskNotes.value = task?.notes || "";
   elements.subtaskList.innerHTML = "";
   (task?.subtasks || []).forEach(addSubtaskRow);
+  renderDependencyOptions(task);
   const priority = task?.priority || "medium";
   elements.taskForm.querySelector(`[name="priority"][value="${priority}"]`).checked = true;
-  elements.sheetTitle.textContent = task ? "Aufgabe bearbeiten" : "Neue Aufgabe";
+  elements.sheetTitle.textContent = task ? t("task.edit") : t("task.new");
   elements.deleteTask.hidden = !task;
-  elements.deleteTask.textContent = "Aufgabe löschen";
+  elements.archiveTask.hidden = !task || Boolean(task.archivedAt);
+  elements.restoreTask.hidden = !task?.archivedAt;
+  elements.deleteTask.textContent = t("task.delete");
   delete elements.deleteTask.dataset.confirm;
-  elements.smartHint.textContent = "Tipp: „Bericht morgen 14:30 #Arbeit !hoch @wöchentlich“";
+  elements.smartHint.textContent = t("task.smartHint");
   elements.smartHint.classList.remove("detected");
   elements.taskSheet.hidden = false;
   elements.taskBackdrop.hidden = false;
   requestAnimationFrame(() => elements.taskTitle.focus());
+}
+
+function renderDependencyOptions(task) {
+  const selected = new Set(task?.dependencyIds || []);
+  const choices = state.tasks.filter((item) => item.id !== task?.id);
+  elements.dependencyList.innerHTML = choices.length ? choices.map((item) => `<label class="dependency-option"><input type="checkbox" value="${escapeHtml(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${escapeHtml(item.title)}${item.archivedAt ? ` · ${t("nav.archive")}` : ""}</span></label>`).join("") : `<p class="dependency-empty">${t("task.noDependencies")}</p>`;
+}
+
+function collectDependencyIds() {
+  return [...elements.dependencyList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+}
+
+function wouldCreateCycle(taskId, dependencyIds) {
+  if (!taskId) return false;
+  const graph = new Map(state.tasks.map((task) => [task.id, task.id === taskId ? dependencyIds : task.dependencyIds || []]));
+  const visit = (id, path = new Set()) => {
+    if (id === taskId && path.size) return true;
+    if (path.has(id)) return false;
+    const next = new Set(path).add(id);
+    return (graph.get(id) || []).some((dependencyId) => visit(dependencyId, next));
+  };
+  return dependencyIds.some((id) => visit(id));
+}
+
+function unresolvedDependencies(task, occurrenceDate) {
+  return (task.dependencyIds || []).map((id) => state.tasks.find((item) => item.id === id)).filter((dependency) => {
+    if (!dependency) return false;
+    if (dependency.repeat !== "none" && occursOn(dependency, occurrenceDate)) return !isOccurrenceComplete(dependency, occurrenceDate);
+    return !dependency.completed && !(dependency.completionDates || []).length;
+  });
 }
 
 function closeTaskSheet() {
@@ -626,7 +720,7 @@ function addSubtaskRow(subtask = {}) {
   const row = document.createElement("div");
   row.className = "subtask-row";
   row.dataset.id = subtask.id || crypto.randomUUID();
-  row.innerHTML = `<input type="checkbox" aria-label="Unteraufgabe erledigt" ${subtask.completed ? "checked" : ""}><input type="text" maxlength="120" placeholder="Nächster kleiner Schritt" value="${escapeHtml(subtask.title || "")}"><button class="remove-subtask" type="button" aria-label="Unteraufgabe entfernen">×</button>`;
+  row.innerHTML = `<input type="checkbox" aria-label="${t("common.done")}" ${subtask.completed ? "checked" : ""}><input type="text" maxlength="120" placeholder="${t("task.stepPlaceholder")}" value="${escapeHtml(subtask.title || "")}"><button class="remove-subtask" type="button" aria-label="Remove">×</button>`;
   row.querySelector(".remove-subtask").addEventListener("click", () => row.remove());
   elements.subtaskList.append(row);
   if (!subtask.title) row.querySelector('input[type="text"]').focus();
@@ -645,6 +739,8 @@ async function saveTaskFromForm(event) {
   applySmartInput(true);
   const id = elements.taskId.value;
   const existing = state.tasks.find((task) => task.id === id);
+  const dependencyIds = collectDependencyIds();
+  if (wouldCreateCycle(id, dependencyIds)) return showToast(t("toast.circular"));
   const task = normalizeTask({
     id: id || crypto.randomUUID(),
     title: elements.taskTitle.value.trim(),
@@ -659,6 +755,8 @@ async function saveTaskFromForm(event) {
     completed: existing?.date === elements.taskDate.value ? existing?.completed || false : false,
     completedAt: existing?.date === elements.taskDate.value ? existing?.completedAt : null,
     completionDates: existing?.completionDates || [],
+    dependencyIds,
+    archivedAt: existing?.archivedAt || null,
     createdAt: existing?.createdAt || Date.now(),
     manualOrder: existing?.manualOrder,
     updatedAt: Date.now(),
@@ -669,7 +767,7 @@ async function saveTaskFromForm(event) {
   await persist();
   closeTaskSheet();
   render();
-  showToast(existing ? "Aufgabe aktualisiert" : "Aufgabe eingeplant");
+  showToast(t(existing ? "toast.updated" : "toast.saved"));
 }
 
 async function handleDelete() {
@@ -677,10 +775,10 @@ async function handleDelete() {
   if (!id) return;
   if (!elements.deleteTask.dataset.confirm) {
     elements.deleteTask.dataset.confirm = "true";
-    elements.deleteTask.textContent = "Wirklich löschen?";
+    elements.deleteTask.textContent = t("task.deleteConfirm");
     setTimeout(() => {
       delete elements.deleteTask.dataset.confirm;
-      elements.deleteTask.textContent = "Aufgabe löschen";
+      elements.deleteTask.textContent = t("task.delete");
     }, 2500);
     return;
   }
@@ -688,12 +786,46 @@ async function handleDelete() {
   await persist();
   closeTaskSheet();
   render();
-  showToast("Aufgabe gelöscht");
+  showToast(t("toast.deleted"));
+}
+
+async function archiveCurrentTask() {
+  await archiveTaskById(elements.taskId.value);
+  closeTaskSheet();
+}
+
+async function restoreCurrentTask() {
+  await restoreTaskById(elements.taskId.value);
+  closeTaskSheet();
+}
+
+async function archiveTaskById(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  task.archivedAt = Date.now();
+  task.updatedAt = Date.now();
+  await persist();
+  render();
+  showToast(t("toast.archived"));
+}
+
+async function restoreTaskById(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  task.archivedAt = null;
+  task.updatedAt = Date.now();
+  await persist();
+  render();
+  showToast(t("toast.restored"));
 }
 
 async function toggleTask(id, occurrenceDate) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
+  if (!isOccurrenceComplete(task, occurrenceDate)) {
+    const unresolved = unresolvedDependencies(task, occurrenceDate);
+    if (unresolved.length) return showToast(t("toast.blocked", { tasks: unresolved.map((item) => item.title).join(", ") }));
+  }
   if (task.repeat !== "none") {
     const dates = new Set(task.completionDates || []);
     dates.has(occurrenceDate) ? dates.delete(occurrenceDate) : dates.add(occurrenceDate);
@@ -705,7 +837,7 @@ async function toggleTask(id, occurrenceDate) {
   task.updatedAt = Date.now();
   await persist();
   render();
-  showToast(isOccurrenceComplete(task, occurrenceDate) ? "Geschafft – gut gemacht!" : "Wieder als offen markiert");
+  showToast(t(isOccurrenceComplete(task, occurrenceDate) ? "toast.done" : "toast.openAgain"));
 }
 
 async function postponeTask(id) {
@@ -723,16 +855,16 @@ function applyQuickDate(action) {
 function updateSmartHint() {
   const detected = detectSmartTokens(elements.taskTitle.value);
   elements.smartHint.classList.toggle("detected", detected.length > 0);
-  elements.smartHint.textContent = detected.length ? `Erkannt: ${detected.join(" · ")}` : "Tipp: „Bericht morgen 14:30 #Arbeit !hoch @wöchentlich“";
+  elements.smartHint.textContent = detected.length ? t("smart.detected", { items: detected.join(" · ") }) : t("task.smartHint");
 }
 
 function detectSmartTokens(value) {
   const found = [];
-  if (/\b(heute|morgen|übermorgen|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b/i.test(value)) found.push("Datum");
-  if (/\b([01]?\d|2[0-3]):[0-5]\d\b/.test(value)) found.push("Uhrzeit");
-  if (/#[\p{L}\d_-]+/u.test(value)) found.push("Bereich");
-  if (/!(hoch|mittel|niedrig)\b/i.test(value)) found.push("Priorität");
-  if (/@(täglich|taeglich|wöchentlich|woechentlich|monatlich)\b/i.test(value)) found.push("Wiederholung");
+  if (/\b(heute|morgen|übermorgen|today|tomorrow|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(value)) found.push(t("smart.date"));
+  if (/\b([01]?\d|2[0-3]):[0-5]\d\b/.test(value)) found.push(t("smart.time"));
+  if (/#[\p{L}\d_-]+/u.test(value)) found.push(t("smart.category"));
+  if (/!(hoch|mittel|niedrig|high|medium|low)\b/i.test(value)) found.push(t("smart.priority"));
+  if (/@(täglich|taeglich|wöchentlich|woechentlich|monatlich|daily|weekly|monthly)\b/i.test(value)) found.push(t("smart.repeat"));
   return found;
 }
 
@@ -740,9 +872,9 @@ function applySmartInput(force) {
   const original = elements.taskTitle.value.trim();
   if (!original || (!force && !detectSmartTokens(original).length)) return;
   let clean = original;
-  const lower = original.toLocaleLowerCase("de");
+  const lower = original.toLocaleLowerCase(locale());
   const base = parseDate(todayString());
-  const relative = { heute: 0, morgen: 1, übermorgen: 2 };
+  const relative = { heute: 0, today: 0, morgen: 1, tomorrow: 1, übermorgen: 2 };
   for (const [word, days] of Object.entries(relative)) {
     if (new RegExp(`\\b${word}\\b`, "i").test(lower)) {
       elements.taskDate.value = dateString(addDays(base, days));
@@ -750,29 +882,29 @@ function applySmartInput(force) {
       break;
     }
   }
-  const weekdays = ["sonntag", "montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"];
-  const weekdayIndex = weekdays.findIndex((day) => new RegExp(`\\b${day}\\b`, "i").test(lower));
+  const weekdays = [["sonntag", "sunday"], ["montag", "monday"], ["dienstag", "tuesday"], ["mittwoch", "wednesday"], ["donnerstag", "thursday"], ["freitag", "friday"], ["samstag", "saturday"]];
+  const weekdayIndex = weekdays.findIndex((names) => names.some((day) => new RegExp(`\\b${day}\\b`, "i").test(lower)));
   if (weekdayIndex >= 0) {
     let difference = (weekdayIndex - base.getDay() + 7) % 7;
     if (difference === 0) difference = 7;
     elements.taskDate.value = dateString(addDays(base, difference));
-    clean = clean.replace(new RegExp(`\\b${weekdays[weekdayIndex]}\\b`, "i"), "");
+    weekdays[weekdayIndex].forEach((day) => { clean = clean.replace(new RegExp(`\\b${day}\\b`, "i"), ""); });
   }
   const time = original.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
   if (time) {
     elements.taskTime.value = `${time[1].padStart(2, "0")}:${time[2]}`;
     clean = clean.replace(time[0], "");
   }
-  const priority = original.match(/!(hoch|mittel|niedrig)\b/i);
+  const priority = original.match(/!(hoch|mittel|niedrig|high|medium|low)\b/i);
   if (priority) {
-    const map = { hoch: "high", mittel: "medium", niedrig: "low" };
-    elements.taskForm.querySelector(`[name="priority"][value="${map[priority[1].toLocaleLowerCase("de")]}"]`).checked = true;
+    const map = { hoch: "high", high: "high", mittel: "medium", medium: "medium", niedrig: "low", low: "low" };
+    elements.taskForm.querySelector(`[name="priority"][value="${map[priority[1].toLocaleLowerCase(locale())]}"]`).checked = true;
     clean = clean.replace(priority[0], "");
   }
-  const repeat = original.match(/@(täglich|taeglich|wöchentlich|woechentlich|monatlich)\b/i);
+  const repeat = original.match(/@(täglich|taeglich|wöchentlich|woechentlich|monatlich|daily|weekly|monthly)\b/i);
   if (repeat) {
     const token = repeat[1].toLocaleLowerCase("de");
-    elements.taskRepeat.value = token.includes("monat") ? "monthly" : token.includes("wöch") || token.includes("woech") ? "weekly" : "daily";
+    elements.taskRepeat.value = token.includes("monat") || token === "monthly" ? "monthly" : token.includes("wöch") || token.includes("woech") || token === "weekly" ? "weekly" : "daily";
     clean = clean.replace(repeat[0], "");
   }
   const categoryToken = original.match(/#([\p{L}\d_-]+)/u);
@@ -795,11 +927,11 @@ function filterOccurrences(items, date) {
 }
 
 function occurrencesForDate(value) {
-  return state.tasks.filter((task) => occursOn(task, value)).map((task) => ({ task, occurrenceDate: value })).sort((a, b) => sortTasks(a.task, b.task));
+  return state.tasks.filter((task) => !task.archivedAt && occursOn(task, value)).map((task) => ({ task, occurrenceDate: value })).sort((a, b) => sortTasks(a.task, b.task));
 }
 
 function overdueOccurrences() {
-  return state.tasks.flatMap((task) => {
+  return state.tasks.filter((task) => !task.archivedAt).flatMap((task) => {
     if (task.repeat === "none") return !task.completed && task.date < todayString() ? [{ task, occurrenceDate: task.date }] : [];
     const previous = latestOccurrenceBefore(task, todayString());
     return previous && !isOccurrenceComplete(task, previous) ? [{ task, occurrenceDate: previous }] : [];
@@ -842,7 +974,7 @@ function sortTasks(a, b) {
 }
 
 function totalCompletedCount() {
-  return state.tasks.reduce((total, task) => total + (task.repeat === "none" ? Number(task.completed) : (task.completionDates || []).length), 0);
+  return state.tasks.filter((task) => !task.archivedAt).reduce((total, task) => total + (task.repeat === "none" ? Number(task.completed) : (task.completionDates || []).length), 0);
 }
 
 function completionRate() {
@@ -852,7 +984,7 @@ function completionRate() {
   let completed = 0;
   for (let cursor = from; cursor <= today; cursor = addDays(cursor, 1)) {
     const value = dateString(cursor);
-    for (const task of state.tasks) {
+    for (const task of state.tasks.filter((item) => !item.archivedAt)) {
       if (!occursOn(task, value)) continue;
       total += 1;
       if (isOccurrenceComplete(task, value)) completed += 1;
@@ -863,7 +995,7 @@ function completionRate() {
 
 function bestWeekday() {
   const counts = [0, 0, 0, 0, 0, 0, 0];
-  state.tasks.forEach((task) => {
+  state.tasks.filter((task) => !task.archivedAt).forEach((task) => {
     if (task.repeat === "none" && task.completed) counts[parseDate(task.date).getDay()] += 1;
     (task.completionDates || []).forEach((value) => { counts[parseDate(value).getDay()] += 1; });
   });
@@ -876,7 +1008,7 @@ function bestWeekday() {
 function calculateStreak() {
   let streak = 0;
   let cursor = parseDate(todayString());
-  const completedOn = (value) => state.tasks.some((task) => occursOn(task, value) && isOccurrenceComplete(task, value));
+  const completedOn = (value) => state.tasks.some((task) => !task.archivedAt && occursOn(task, value) && isOccurrenceComplete(task, value));
   if (!completedOn(dateString(cursor))) cursor = addDays(cursor, -1);
   for (let index = 0; index < 365 && completedOn(dateString(cursor)); index += 1) {
     streak += 1;
@@ -903,6 +1035,30 @@ function openFullTab() {
   else window.open(page, "_blank", "noopener");
 }
 
+async function captureCurrentTab() {
+  try {
+    if (!globalThis.chrome?.tabs?.query) throw new Error("tabs unavailable");
+    const tabs = await chrome.tabs.query({ lastFocusedWindow: true });
+    const extensionRoot = chrome.runtime?.getURL?.("") || "";
+    const candidates = tabs.filter((tab) => tab.url && !tab.url.startsWith(extensionRoot) && !/^(chrome|edge|about|view-source):/i.test(tab.url));
+    const tab = candidates.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+    if (!tab) return showToast(t("toast.noTab"));
+    const task = normalizeTask({
+      id: crypto.randomUUID(), title: tab.title || tab.url, date: todayString(), category: state.categories[0]?.id || "other",
+      notes: tab.url, sourceUrl: tab.url, priority: "medium", repeat: "none", reminder: "none", createdAt: Date.now(), updatedAt: Date.now(),
+    });
+    state.tasks.push(task);
+    state.selectedDate = task.date;
+    state.view = "day";
+    elements.tabs.forEach((item) => item.classList.toggle("active", item.dataset.view === "day"));
+    await persist();
+    render();
+    showToast(t("toast.tabSaved"));
+  } catch {
+    showToast(t("toast.noTab"));
+  }
+}
+
 async function toggleTheme() {
   state.theme = state.theme === "dark" ? "light" : "dark";
   applyTheme();
@@ -915,6 +1071,8 @@ function applyTheme() {
 
 function openInfo() {
   elements.weekGoal.value = state.weekGoal;
+  elements.languageSelect.value = state.language;
+  elements.autoArchiveDays.value = String(state.autoArchiveDays);
   renderCategorySettings();
   elements.infoSheet.hidden = false;
   elements.infoBackdrop.hidden = false;
@@ -926,14 +1084,14 @@ function closeInfo() {
 }
 
 function populateCategorySelect(selected = elements.taskCategory.value) {
-  elements.taskCategory.innerHTML = state.categories.map((category) => `<option value="${escapeHtml(category.id)}">${escapeHtml(category.label)}</option>`).join("");
+  elements.taskCategory.innerHTML = state.categories.map((category) => `<option value="${escapeHtml(category.id)}">${escapeHtml(categoryLabel(category))}</option>`).join("");
   if (state.categories.some((category) => category.id === selected)) elements.taskCategory.value = selected;
 }
 
 function renderCategorySettings() {
   elements.categoryList.innerHTML = state.categories.map((category) => `<div class="category-setting" data-category-id="${escapeHtml(category.id)}">
-    <input type="color" value="${validColor(category.color) ? category.color : "#4f8b69"}" aria-label="Farbe für ${escapeHtml(category.label)}">
-    <input type="text" value="${escapeHtml(category.label)}" maxlength="32" aria-label="Name des Bereichs">
+    <input type="color" value="${validColor(category.color) ? category.color : "#4f8b69"}" aria-label="Color for ${escapeHtml(categoryLabel(category))}">
+    <input type="text" value="${escapeHtml(categoryLabel(category))}" maxlength="32" aria-label="Category name">
     <button type="button" aria-label="Bereich löschen">×</button>
   </div>`).join("");
   elements.categoryList.querySelectorAll(".category-setting").forEach((row) => {
@@ -945,6 +1103,7 @@ function renderCategorySettings() {
     });
     row.querySelector('input[type="text"]').addEventListener("change", async (event) => {
       getCategory(id).label = event.target.value.trim() || "Bereich";
+      getCategory(id).isDefault = false;
       populateCategorySelect();
       await persist();
       render();
@@ -954,7 +1113,7 @@ function renderCategorySettings() {
 }
 
 async function addCategory() {
-  const category = { id: crypto.randomUUID(), label: `Bereich ${state.categories.length + 1}`, color: "#4f8b69" };
+  const category = { id: crypto.randomUUID(), label: `${state.language === "en" ? "Category" : "Bereich"} ${state.categories.length + 1}`, color: "#4f8b69", isDefault: false };
   state.categories.push(category);
   populateCategorySelect(category.id);
   renderCategorySettings();
@@ -977,8 +1136,22 @@ function getCategory(id) {
   return state.categories.find((category) => category.id === id) || state.categories[0];
 }
 
+function autoArchiveTasks() {
+  if (!state.autoArchiveDays) return false;
+  const cutoff = Date.now() - state.autoArchiveDays * 86400000;
+  let changed = false;
+  state.tasks.forEach((task) => {
+    if (!task.archivedAt && task.repeat === "none" && task.completed && Number(task.completedAt) && task.completedAt <= cutoff) {
+      task.archivedAt = Date.now();
+      task.updatedAt = Date.now();
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function exportBackup() {
-  const backup = { version: 2, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme };
+  const backup = { version: 3, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1004,7 +1177,10 @@ async function importBackup(event) {
     state.tasks = [...merged.values()];
     if (Array.isArray(imported.categories) && imported.categories.length) state.categories = imported.categories.map(normalizeCategory);
     if (imported.weekGoal) state.weekGoal = clamp(Number(imported.weekGoal), 1, 100);
+    if (["de", "en"].includes(imported.language)) state.language = imported.language;
+    if ([0, 30, 90].includes(Number(imported.autoArchiveDays))) state.autoArchiveDays = Number(imported.autoArchiveDays);
     await persist();
+    applyLanguage();
     populateCategorySelect();
     renderCategorySettings();
     render();
@@ -1016,10 +1192,10 @@ async function importBackup(event) {
 
 function openFocus(taskId = "") {
   const today = todayString();
-  const open = state.tasks.filter((task) => task.repeat === "none" ? !task.completed : occursOn(task, today) && !isOccurrenceComplete(task, today)).sort(sortTasks);
+  const open = state.tasks.filter((task) => !task.archivedAt && !unresolvedDependencies(task, today).length && (task.repeat === "none" ? !task.completed : occursOn(task, today) && !isOccurrenceComplete(task, today))).sort(sortTasks);
   elements.focusTask.innerHTML = open.length
     ? open.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")
-    : '<option value="">Keine offene Aufgabe</option>';
+    : `<option value="">${state.language === "en" ? "No open task" : "Keine offene Aufgabe"}</option>`;
   if (open.some((task) => task.id === taskId)) elements.focusTask.value = taskId;
   elements.focusSheet.hidden = false;
   elements.focusBackdrop.hidden = false;
@@ -1038,8 +1214,8 @@ function setTimerMode(mode) {
   focusState.total = mode === "focus" ? 25 * 60 : 5 * 60;
   focusState.remaining = focusState.total;
   elements.timerTabs.forEach((button) => button.classList.toggle("active", button.dataset.timerMode === mode));
-  elements.startTimer.textContent = "Starten";
-  elements.timerStatus.textContent = "Bereit";
+  elements.startTimer.textContent = t("focus.start");
+  elements.timerStatus.textContent = t("focus.ready");
   updateTimerDisplay();
 }
 
@@ -1052,8 +1228,8 @@ function startTimer() {
   if (focusState.remaining <= 0) focusState.remaining = focusState.total;
   focusState.running = true;
   focusState.deadline = Date.now() + focusState.remaining * 1000;
-  elements.startTimer.textContent = "Pausieren";
-  elements.timerStatus.textContent = focusState.mode === "focus" ? "Konzentriert arbeiten" : "Kurz durchatmen";
+  elements.startTimer.textContent = t("focus.pause");
+  elements.timerStatus.textContent = t(focusState.mode === "focus" ? "focus.working" : "focus.breathe");
   clearInterval(focusState.interval);
   focusState.interval = setInterval(tickTimer, 250);
 }
@@ -1062,8 +1238,8 @@ function pauseTimer() {
   if (focusState.running) focusState.remaining = Math.max(0, Math.ceil((focusState.deadline - Date.now()) / 1000));
   focusState.running = false;
   clearInterval(focusState.interval);
-  elements.startTimer.textContent = "Fortsetzen";
-  elements.timerStatus.textContent = "Pausiert";
+  elements.startTimer.textContent = t("focus.resume");
+  elements.timerStatus.textContent = t("focus.paused");
   updateTimerDisplay();
 }
 
@@ -1071,8 +1247,8 @@ function resetTimer() {
   focusState.running = false;
   clearInterval(focusState.interval);
   focusState.remaining = focusState.total;
-  elements.startTimer.textContent = "Starten";
-  elements.timerStatus.textContent = "Bereit";
+  elements.startTimer.textContent = t("focus.start");
+  elements.timerStatus.textContent = t("focus.ready");
   updateTimerDisplay();
 }
 
@@ -1082,8 +1258,8 @@ function tickTimer() {
   if (focusState.remaining > 0) return;
   focusState.running = false;
   clearInterval(focusState.interval);
-  elements.startTimer.textContent = "Nochmal";
-  elements.timerStatus.textContent = "Geschafft!";
+  elements.startTimer.textContent = state.language === "en" ? "Again" : "Nochmal";
+  elements.timerStatus.textContent = t("focus.done");
   const task = state.tasks.find((item) => item.id === elements.focusTask.value);
   const message = focusState.mode === "focus" ? `Fokusrunde beendet${task ? `: ${task.title}` : ""}` : "Pause beendet – bereit für die nächste Runde?";
   if (globalThis.chrome?.notifications) chrome.notifications.create(`planbar-focus-${Date.now()}`, { type: "basic", iconUrl: "assets/icon-128.png", title: "Planbar Fokus", message });
@@ -1114,7 +1290,7 @@ async function loadData() {
       const meta = sync[SYNC_META_KEY];
       if (!meta) return localData;
       const tasks = Object.entries(sync).filter(([key]) => key.startsWith(SYNC_TASK_PREFIX)).map(([, task]) => task);
-      return { ...localData, ...meta, tasks, version: 2 };
+      return { ...localData, ...meta, tasks, version: 3 };
     } catch {
       return localData;
     }
@@ -1124,7 +1300,7 @@ async function loadData() {
 }
 
 async function persist() {
-  const value = { version: 2, tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, updatedAt: Date.now() };
+  const value = { version: 3, tasks: state.tasks, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: Date.now() };
   if (!globalThis.chrome?.storage?.local) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
     return;
@@ -1136,7 +1312,7 @@ async function persist() {
     const staleKeys = Object.keys(sync).filter((key) => key.startsWith(SYNC_TASK_PREFIX) && !taskEntries[key]);
     if (staleKeys.length) await chrome.storage.sync.remove(staleKeys);
     await chrome.storage.sync.set({
-      [SYNC_META_KEY]: { version: 2, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, updatedAt: value.updatedAt },
+      [SYNC_META_KEY]: { version: 3, categories: state.categories, weekGoal: state.weekGoal, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: value.updatedAt },
       ...taskEntries,
     });
   } catch (error) {
@@ -1165,9 +1341,9 @@ function startOfWeek(date) {
   return result;
 }
 function sameDay(a, b) { return dateString(a) === dateString(b); }
-function formatLongDate(date) { return capitalize(date.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })); }
-function formatShortDate(date) { return date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }); }
-function formatAgendaTitle(date) { return dateString(date) === todayString() ? "Heute" : capitalize(date.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })); }
+function formatLongDate(date) { return capitalize(date.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })); }
+function formatShortDate(date) { return date.toLocaleDateString(locale(), { day: "2-digit", month: "2-digit" }); }
+function formatAgendaTitle(date) { return dateString(date) === todayString() ? t("common.today") : capitalize(date.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })); }
 function getWeekNumber(date) {
   const value = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   value.setUTCDate(value.getUTCDate() + 4 - (value.getUTCDay() || 7));
@@ -1176,15 +1352,15 @@ function getWeekNumber(date) {
 }
 function relativeDayLabel(date) {
   const difference = Math.round((parseDate(dateString(date)) - parseDate(todayString())) / 86400000);
-  if (difference === 0) return { eyebrow: "HEUTE", title: "Was steht an?" };
-  if (difference === 1) return { eyebrow: "MORGEN", title: "Gut vorbereitet." };
-  if (difference === -1) return { eyebrow: "GESTERN", title: "Rückblick." };
-  return { eyebrow: date.toLocaleDateString("de-DE", { weekday: "long" }).toUpperCase(), title: `${date.getDate()}. ${capitalize(date.toLocaleDateString("de-DE", { month: "long" }))}` };
+  if (difference === 0) return { eyebrow: t("hero.todayEyebrow"), title: t("hero.todayTitle") };
+  if (difference === 1) return { eyebrow: t("hero.tomorrowEyebrow"), title: t("hero.tomorrowTitle") };
+  if (difference === -1) return { eyebrow: t("hero.yesterdayEyebrow"), title: t("hero.yesterdayTitle") };
+  return { eyebrow: date.toLocaleDateString(locale(), { weekday: "long" }).toUpperCase(), title: state.language === "en" ? capitalize(date.toLocaleDateString(locale(), { month: "long", day: "numeric" })) : `${date.getDate()}. ${capitalize(date.toLocaleDateString(locale(), { month: "long" }))}` };
 }
 function daySummary(total, completed) {
-  if (!total) return "Noch nichts geplant – der Tag gehört dir.";
-  if (total === completed) return "Alles erledigt. Zeit zum Durchatmen.";
-  return `${total - completed} ${total - completed === 1 ? "Aufgabe wartet" : "Aufgaben warten"} auf dich.`;
+  if (!total) return t("hero.free");
+  if (total === completed) return t("hero.complete");
+  return t(total - completed === 1 ? "hero.waitingOne" : "hero.waitingMany", { count: total - completed });
 }
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 function capitalize(value) { return value.charAt(0).toUpperCase() + value.slice(1); }
