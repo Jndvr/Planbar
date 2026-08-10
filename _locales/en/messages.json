@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "Planbar – Todo Planner" },
+  "extensionDescription": { "message": "Plan tasks by day, week, and month in a modern Chrome Side Panel." },
+  "actionTitle": { "message": "Open Planbar" }
+}

@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Planbar – Todo Planer",
-  "version": "2.0.0",
-  "description": "Plane Aufgaben tage-, wochen- und monatsweise in einem modernen Chrome Side Panel.",
-  "permissions": ["storage", "sidePanel", "notifications", "alarms", "contextMenus"],
+  "name": "__MSG_extensionName__",
+  "version": "2.1.0",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "de",
+  "permissions": ["storage", "sidePanel", "notifications", "alarms", "contextMenus", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Planbar öffnen",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "assets/icon-16.png",
       "32": "assets/icon-32.png",

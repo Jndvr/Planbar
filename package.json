@@ -1,11 +1,11 @@
 {
   "name": "planbar-chrome-extension",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Moderner Todo-Planer für Chrome mit Tages-, Wochen- und Monatsansicht.",
   "license": "MIT",
   "private": true,
   "scripts": {
     "test": "node tests/logic-smoke.mjs && node tests/background-smoke.mjs",
-    "check": "node --check sidepanel.js && node --check background.js && npm test"
+    "check": "node --check i18n.js && node --check sidepanel.js && node --check background.js && npm test"
   }
 }

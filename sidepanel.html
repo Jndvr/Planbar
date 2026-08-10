@@ -10,49 +10,57 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <button class="brand" id="brandButton" aria-label="Zu heute springen">
+        <button class="brand" id="brandButton" aria-label="Zu heute springen" data-i18n-aria="action.today">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="m8.5 14 2 2 4.5-5"/></svg>
           </span>
           <span>Planbar</span>
         </button>
         <div class="top-actions">
-          <button class="icon-btn" id="focusButton" aria-label="Fokusmodus öffnen" title="Fokusmodus">
+          <button class="icon-btn" id="saveTabButton" aria-label="Aktuellen Tab als Aufgabe speichern" title="Aktuellen Tab als Aufgabe speichern" data-i18n-aria="action.saveTab" data-i18n-title="action.saveTab">
+            <svg viewBox="0 0 24 24"><path d="M4 7.5h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-10Z"/><path d="M4 7.5 6 4.5h12l2 3M12 10v6m-3-3h6"/></svg>
+          </button>
+          <button class="icon-btn" id="focusButton" aria-label="Fokusmodus öffnen" title="Fokusmodus" data-i18n-aria="action.focus" data-i18n-title="action.focus">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
           </button>
-          <button class="icon-btn" id="openTabButton" aria-label="In einem ganzen Tab öffnen" title="In einem ganzen Tab öffnen">
+          <button class="icon-btn" id="openTabButton" aria-label="In einem ganzen Tab öffnen" title="In einem ganzen Tab öffnen" data-i18n-aria="action.openTab" data-i18n-title="action.openTab">
             <svg viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-7 7"/><path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4"/></svg>
           </button>
-          <button class="icon-btn" id="searchButton" aria-label="Aufgaben durchsuchen" title="Suchen">
+          <button class="icon-btn" id="searchButton" aria-label="Aufgaben durchsuchen" title="Suchen" data-i18n-aria="action.search" data-i18n-title="action.search">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
           </button>
-          <button class="icon-btn" id="themeButton" aria-label="Darstellung wechseln" title="Darstellung wechseln">
+          <button class="icon-btn" id="themeButton" aria-label="Darstellung wechseln" title="Darstellung wechseln" data-i18n-aria="action.theme" data-i18n-title="action.theme">
             <svg class="sun-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
             <svg class="moon-icon" viewBox="0 0 24 24"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"/></svg>
           </button>
-          <button class="avatar" id="settingsButton" aria-label="Info öffnen">P</button>
+          <button class="avatar" id="settingsButton" aria-label="Info öffnen" data-i18n-aria="action.info">P</button>
         </div>
       </header>
 
       <div class="search-panel" id="searchPanel" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-        <input id="searchInput" type="search" placeholder="Aufgaben durchsuchen …" autocomplete="off" />
-        <button class="clear-search" id="clearSearch" aria-label="Suche schließen">×</button>
+        <input id="searchInput" type="search" placeholder="Aufgaben durchsuchen …" data-i18n-placeholder="search.placeholder" autocomplete="off" />
+        <button class="clear-search" id="clearSearch" aria-label="Suche schließen" data-i18n-aria="search.close">×</button>
       </div>
 
       <nav class="view-tabs" aria-label="Zeitraum auswählen">
-        <button class="view-tab active" data-view="day">Tag</button>
-        <button class="view-tab" data-view="week">Woche</button>
-        <button class="view-tab" data-view="month">Monat</button>
+        <button class="view-tab active" data-view="day" data-i18n="nav.day">Tag</button>
+        <button class="view-tab" data-view="week" data-i18n="nav.week">Woche</button>
+        <button class="view-tab" data-view="month" data-i18n="nav.month">Monat</button>
+        <button class="view-tab" data-view="archive" data-i18n="nav.archive">Archiv</button>
       </nav>
 
       <main id="mainContent" tabindex="-1"></main>
 
       <button class="fab" id="addButton" aria-label="Neue Aufgabe hinzufügen">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-        <span>Aufgabe</span>
+        <span data-i18n="task.add">Aufgabe</span>
         <kbd>⌘↵</kbd>
       </button>
+      <div class="drag-trash" id="trashDropZone" hidden aria-label="Aufgabe löschen" data-i18n-aria="drag.delete">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6"/></svg>
+        <span data-i18n="drag.delete">Zum Löschen hier ablegen</span>
+      </div>
     </div>
 
     <div class="sheet-backdrop" id="taskBackdrop" hidden></div>
@@ -60,7 +68,7 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-header">
         <div>
-          <p class="eyebrow">PLANUNG</p>
+          <p class="eyebrow" data-i18n="task.planning">PLANUNG</p>
           <h2 id="sheetTitle">Neue Aufgabe</h2>
         </div>
         <button class="icon-btn sheet-close" id="closeSheet" aria-label="Dialog schließen">×</button>
@@ -68,41 +76,41 @@
       <form id="taskForm">
         <input type="hidden" id="taskId" />
         <label class="field title-field">
-          <span>Was möchtest du erledigen?</span>
-          <input id="taskTitle" type="text" maxlength="120" placeholder="z. B. Präsentation vorbereiten" required autofocus />
-          <small class="smart-hint" id="smartHint">Tipp: „Bericht morgen 14:30 #Arbeit !hoch @wöchentlich“</small>
+          <span data-i18n="task.titleLabel">Was möchtest du erledigen?</span>
+          <input id="taskTitle" type="text" maxlength="120" placeholder="z. B. Präsentation vorbereiten" data-i18n-placeholder="task.titlePlaceholder" required autofocus />
+          <small class="smart-hint" id="smartHint" data-i18n="task.smartHint">Tipp: „Bericht morgen 14:30 #Arbeit !hoch @wöchentlich“</small>
         </label>
 
         <div class="form-row">
           <label class="field">
-            <span>Datum</span>
+            <span data-i18n="task.date">Datum</span>
             <input id="taskDate" type="date" required />
           </label>
           <label class="field">
-            <span>Uhrzeit <small>optional</small></span>
+            <span><span data-i18n="task.time">Uhrzeit</span> <small data-i18n="common.optional">optional</small></span>
             <input id="taskTime" type="time" />
           </label>
         </div>
 
         <div class="quick-date-row" aria-label="Aufgabe schnell verschieben">
-          <button type="button" data-quick-date="today">Heute</button>
-          <button type="button" data-quick-date="tomorrow">Morgen</button>
-          <button type="button" data-quick-date="next-week">Nächste Woche</button>
-          <button type="button" data-quick-date="plus-one">+1 Tag</button>
+          <button type="button" data-quick-date="today" data-i18n="quick.today">Heute</button>
+          <button type="button" data-quick-date="tomorrow" data-i18n="quick.tomorrow">Morgen</button>
+          <button type="button" data-quick-date="next-week" data-i18n="quick.nextWeek">Nächste Woche</button>
+          <button type="button" data-quick-date="plus-one" data-i18n="quick.plusDay">+1 Tag</button>
         </div>
 
         <fieldset class="choice-field">
-          <legend>Priorität</legend>
+          <legend data-i18n="task.priority">Priorität</legend>
           <div class="priority-options">
-            <label><input type="radio" name="priority" value="low" /><span><i class="priority-dot low"></i>Niedrig</span></label>
-            <label><input type="radio" name="priority" value="medium" checked /><span><i class="priority-dot medium"></i>Mittel</span></label>
-            <label><input type="radio" name="priority" value="high" /><span><i class="priority-dot high"></i>Hoch</span></label>
+            <label><input type="radio" name="priority" value="low" /><span><i class="priority-dot low"></i><b data-i18n="priority.low">Niedrig</b></span></label>
+            <label><input type="radio" name="priority" value="medium" checked /><span><i class="priority-dot medium"></i><b data-i18n="priority.medium">Mittel</b></span></label>
+            <label><input type="radio" name="priority" value="high" /><span><i class="priority-dot high"></i><b data-i18n="priority.high">Hoch</b></span></label>
           </div>
         </fieldset>
 
         <div class="form-row">
           <label class="field">
-            <span>Bereich</span>
+            <span data-i18n="task.category">Bereich</span>
             <select id="taskCategory">
               <option value="work">Arbeit</option>
               <option value="personal">Privat</option>
@@ -112,45 +120,57 @@
             </select>
           </label>
           <label class="field">
-            <span>Wiederholen</span>
+            <span data-i18n="task.repeat">Wiederholen</span>
             <select id="taskRepeat">
-              <option value="none">Nie</option>
-              <option value="daily">Täglich</option>
-              <option value="weekly">Wöchentlich</option>
-              <option value="monthly">Monatlich</option>
+              <option value="none" data-i18n="repeat.none">Nie</option>
+              <option value="daily" data-i18n="repeat.daily">Täglich</option>
+              <option value="weekly" data-i18n="repeat.weekly">Wöchentlich</option>
+              <option value="monthly" data-i18n="repeat.monthly">Monatlich</option>
             </select>
           </label>
         </div>
 
         <label class="field">
-          <span>Erinnerung <small>nur mit Uhrzeit</small></span>
+          <span><span data-i18n="task.reminder">Erinnerung</span> <small data-i18n="task.onlyWithTime">nur mit Uhrzeit</small></span>
           <select id="taskReminder">
-            <option value="none">Keine Erinnerung</option>
-            <option value="0">Zur Uhrzeit</option>
-            <option value="5">5 Minuten vorher</option>
-            <option value="15">15 Minuten vorher</option>
-            <option value="30">30 Minuten vorher</option>
-            <option value="60">1 Stunde vorher</option>
-            <option value="1440">1 Tag vorher</option>
+            <option value="none" data-i18n="reminder.none">Keine Erinnerung</option>
+            <option value="0" data-i18n="reminder.now">Zur Uhrzeit</option>
+            <option value="5" data-i18n="reminder.5">5 Minuten vorher</option>
+            <option value="15" data-i18n="reminder.15">15 Minuten vorher</option>
+            <option value="30" data-i18n="reminder.30">30 Minuten vorher</option>
+            <option value="60" data-i18n="reminder.60">1 Stunde vorher</option>
+            <option value="1440" data-i18n="reminder.1440">1 Tag vorher</option>
           </select>
         </label>
 
         <div class="subtask-field">
           <div class="subtask-head">
-            <span>Unteraufgaben</span>
-            <button type="button" id="addSubtask">+ Schritt</button>
+            <span data-i18n="task.subtasks">Unteraufgaben</span>
+            <button type="button" id="addSubtask" data-i18n="task.addStep">+ Schritt</button>
           </div>
           <div id="subtaskList"></div>
         </div>
 
+        <div class="dependency-field">
+          <div class="dependency-head"><span data-i18n="task.dependencies">Abhängigkeiten</span><small data-i18n="task.dependenciesHelp">Wähle offene Einzelaufgaben, die zuerst erledigt werden müssen.</small></div>
+          <div class="dependency-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="dependencySearch" type="search" autocomplete="off" placeholder="Offene Aufgaben suchen …" data-i18n-placeholder="task.dependenciesSearch" />
+          </div>
+          <small class="dependency-summary" id="dependencySummary"></small>
+          <div id="dependencyList"></div>
+        </div>
+
         <label class="field">
-          <span>Notiz <small>optional</small></span>
-          <textarea id="taskNotes" rows="3" maxlength="500" placeholder="Details, Links oder Gedanken …"></textarea>
+          <span><span data-i18n="task.notes">Notiz</span> <small data-i18n="common.optional">optional</small></span>
+          <textarea id="taskNotes" rows="3" maxlength="500" placeholder="Details, Links oder Gedanken …" data-i18n-placeholder="task.notesPlaceholder"></textarea>
         </label>
 
         <div class="form-actions">
-          <button class="danger-btn" id="deleteTask" type="button" hidden>Aufgabe löschen</button>
-          <button class="primary-btn" type="submit">Speichern</button>
+          <button class="danger-btn" id="deleteTask" type="button" hidden data-i18n="task.delete">Aufgabe löschen</button>
+          <button class="secondary-btn" id="archiveTask" type="button" hidden data-i18n="task.archive">Archivieren</button>
+          <button class="secondary-btn" id="restoreTask" type="button" hidden data-i18n="task.restore">Wiederherstellen</button>
+          <button class="primary-btn" type="submit" data-i18n="task.save">Speichern</button>
         </div>
       </form>
     </section>
@@ -161,52 +181,57 @@
       <span class="large-brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="m8.5 14 2 2 4.5-5"/></svg>
       </span>
-      <p class="eyebrow">DEIN PLANER</p>
-      <h2 id="infoTitle">Alles im Blick.</h2>
-      <p>Planbar speichert lokal und synchronisiert deine Daten über dein angemeldetes Chrome-Profil. Öffne die Extension über das Symbol und pinne das Side Panel für dauerhaften Zugriff an.</p>
+      <p class="eyebrow" data-i18n="settings.eyebrow">DEIN PLANER</p>
+      <h2 id="infoTitle" data-i18n="settings.title">Alles im Blick.</h2>
+      <p data-i18n="settings.description">Planbar speichert lokal und synchronisiert deine Daten über dein angemeldetes Chrome-Profil.</p>
       <div class="settings-block">
-        <div class="settings-title"><strong>Wochenziel</strong><span>Erledigte Aufgaben pro Woche</span></div>
-        <input id="weekGoal" type="number" min="1" max="100" value="10" />
+        <div class="settings-title"><strong data-i18n="settings.language">Sprache</strong><span data-i18n="settings.languageDesc">Oberfläche und intelligente Eingabe</span></div>
+        <select id="languageSelect"><option value="de" data-i18n="language.de">Deutsch</option><option value="en" data-i18n="language.en">English</option></select>
+      </div>
+      <div class="settings-block">
+        <div class="settings-title"><strong data-i18n="settings.autoArchive">Automatisch archivieren</strong><span data-i18n="settings.autoArchiveDesc">Erledigte Aufgaben nach einer Frist ausblenden</span></div>
+        <select id="autoArchiveDays"><option value="0" data-i18n="archive.never">Nie</option><option value="30" data-i18n="archive.30days">Nach 30 Tagen</option><option value="90" data-i18n="archive.90days">Nach 90 Tagen</option></select>
       </div>
       <div class="category-settings">
-        <div class="settings-title"><strong>Eigene Bereiche</strong><span>Name und Farbe anpassen</span></div>
+        <div class="settings-title"><strong data-i18n="settings.categories">Eigene Bereiche</strong><span data-i18n="settings.categoriesDesc">Name und Farbe anpassen</span></div>
         <div id="categoryList"></div>
-        <button class="secondary-btn wide" id="addCategory" type="button">+ Bereich hinzufügen</button>
+        <button class="secondary-btn wide" id="addCategory" type="button" data-i18n="settings.addCategory">+ Bereich hinzufügen</button>
       </div>
       <div class="data-actions">
-        <button class="secondary-btn" id="exportData" type="button">Backup exportieren</button>
-        <button class="secondary-btn" id="importData" type="button">Backup importieren</button>
+        <button class="secondary-btn" id="exportData" type="button" data-i18n="settings.export">Backup exportieren</button>
+        <button class="secondary-btn" id="importData" type="button" data-i18n="settings.import">Backup importieren</button>
         <input id="importFile" type="file" accept="application/json,.json" hidden />
       </div>
-      <div class="shortcut-card"><span>Schnell neue Aufgabe</span><kbd>⌘ / Ctrl + Enter</kbd></div>
-      <div class="shortcut-card"><span>Suche öffnen</span><kbd>⌘ / Ctrl + K</kbd></div>
+      <div class="shortcut-card"><span data-i18n="settings.shortcutNew">Schnell neue Aufgabe</span><kbd>⌘ / Ctrl + Enter</kbd></div>
+      <div class="shortcut-card"><span data-i18n="settings.shortcutSearch">Suche öffnen</span><kbd>⌘ / Ctrl + K</kbd></div>
     </section>
 
     <div class="sheet-backdrop" id="focusBackdrop" hidden></div>
     <section class="focus-sheet" id="focusSheet" role="dialog" aria-modal="true" aria-labelledby="focusTitle" hidden>
       <button class="icon-btn focus-close" id="closeFocus" aria-label="Fokusmodus schließen">×</button>
-      <p class="eyebrow">FOKUSMODUS</p>
-      <h2 id="focusTitle">Eine Sache nach der anderen.</h2>
+      <p class="eyebrow" data-i18n="focus.eyebrow">FOKUSMODUS</p>
+      <h2 id="focusTitle" data-i18n="focus.title">Eine Sache nach der anderen.</h2>
       <label class="field focus-task-select">
-        <span>Aufgabe</span>
+        <span data-i18n="focus.task">Aufgabe</span>
         <select id="focusTask"></select>
       </label>
       <div class="timer-tabs">
-        <button class="active" type="button" data-timer-mode="focus">Fokus · 25 Min.</button>
-        <button type="button" data-timer-mode="break">Pause · 5 Min.</button>
+        <button class="active" type="button" data-timer-mode="focus" data-i18n="focus.session">Fokus · 25 Min.</button>
+        <button type="button" data-timer-mode="break" data-i18n="focus.break">Pause · 5 Min.</button>
       </div>
       <div class="timer-ring" id="timerRing" style="--timer-progress: 360deg">
         <span id="timerDisplay">25:00</span>
-        <small id="timerStatus">Bereit</small>
+        <small id="timerStatus" data-i18n="focus.ready">Bereit</small>
       </div>
       <div class="timer-actions">
-        <button class="secondary-btn" id="resetTimer" type="button">Zurücksetzen</button>
-        <button class="primary-btn" id="startTimer" type="button">Starten</button>
+        <button class="secondary-btn" id="resetTimer" type="button" data-i18n="focus.reset">Zurücksetzen</button>
+        <button class="primary-btn" id="startTimer" type="button" data-i18n="focus.start">Starten</button>
       </div>
     </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+    <script src="i18n.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>
