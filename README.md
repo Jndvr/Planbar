@@ -94,7 +94,7 @@ Select text on any webpage, open the context menu, and choose **Add to Planbar**
 
 ## Data Storage and Privacy
 
-Planbar does not require a proprietary server and does not send data to the developer.
+Planbar does not require a proprietary server and does not send data to the developer. See the full [Privacy Policy](privacy.html).
 
 - `chrome.storage.local` is the durable local source of truth.
 - `chrome.storage.sync` mirrors tasks for Chrome profiles with sync enabled.
@@ -114,7 +114,7 @@ Chrome may assign a different extension ID when the unpacked extension is instal
 | `contextMenus` | Capture selected text as a task |
 | `tabs` | Read the title and URL of the tab you explicitly save as a task |
 
-Planbar does not read page contents or store browsing history. Tab metadata is accessed only when you use the save-tab button.
+Planbar does not read page contents automatically or store browsing history. Tab metadata is accessed only when you use the save-tab button; selected text and its source URL are saved only when you explicitly use the Planbar context-menu action.
 
 ## Keyboard Shortcuts
 

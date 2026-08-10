@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Privacy Policy — Planbar</title>
+    <style>
+      :root { color-scheme: light; --bg: #f7f7f3; --card: #fff; --ink: #17211b; --muted: #667069; --accent: #316e4f; --line: #e2e6df; }
+      @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg: #111612; --card: #1a211c; --ink: #edf3ec; --muted: #a7b0a9; --accent: #9bce85; --line: #303b33; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      main { width: min(820px, calc(100% - 32px)); margin: 48px auto; padding: clamp(24px, 5vw, 52px); border: 1px solid var(--line); border-radius: 24px; background: var(--card); }
+      h1, h2 { line-height: 1.2; letter-spacing: -.02em; }
+      h1 { margin: 0 0 8px; font-size: clamp(32px, 7vw, 48px); }
+      h2 { margin: 34px 0 10px; font-size: 22px; }
+      p, li { color: var(--muted); }
+      strong { color: var(--ink); }
+      a { color: var(--accent); }
+      .brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--accent); font-weight: 800; }
+      .mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; color: white; background: #316e4f; }
+      .updated { margin-top: 0; font-size: 14px; }
+      .summary { padding: 18px 20px; border-left: 4px solid var(--accent); border-radius: 12px; background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="mark">✓</span> Planbar</div>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: August 11, 2026</p>
+
+      <p class="summary"><strong>In short:</strong> Planbar has no account, advertising, analytics, or developer-operated server. Your planning data is stored in Chrome and is never sold or sent to the developer.</p>
+
+      <h2>Data Planbar processes</h2>
+      <p>Planbar processes the information you choose to enter, including task titles, notes, dates, times, priorities, categories, subtasks, dependencies, completion status, recurrence, reminders, archive settings, language, and theme.</p>
+      <p>When you explicitly use <strong>Save current tab</strong>, Planbar reads that tab's title and URL and saves them in a task. When you explicitly choose <strong>Add to Planbar</strong> from a webpage's context menu, Planbar saves the selected text and source page URL. Planbar does not otherwise read page contents or collect browsing history.</p>
+
+      <h2>Storage and Chrome Sync</h2>
+      <p><code>chrome.storage.local</code> is the local source of truth. Planbar also mirrors planning data to <code>chrome.storage.sync</code> when Chrome Sync is available in your browser profile. Synced data is handled by Google as part of Chrome Sync; the developer cannot access it. If Chrome Sync is unavailable or its quota is exceeded, Planbar continues to save locally.</p>
+
+      <h2>Reminders, backups, and deletion</h2>
+      <p>Reminder schedules and notifications are created locally through Chrome. JSON backups are exported to, and imported from, files you choose on your device. Planbar does not upload backup files.</p>
+      <p>You can delete tasks inside Planbar, clear the extension's stored data in Chrome, disable Chrome Sync, or uninstall the extension. Data already synced through Chrome may also be managed through your Google account's Chrome Sync controls.</p>
+
+      <h2>Data sharing and transfers</h2>
+      <p>Planbar does not sell, rent, disclose, or transfer user data to the developer, advertisers, data brokers, or other third parties. The only infrastructure that may receive planning data is Google Chrome Sync when it is enabled and available in the user's Chrome profile.</p>
+
+      <h2>Permissions</h2>
+      <ul>
+        <li><strong>storage:</strong> saves settings and planning data locally and through optional Chrome Sync.</li>
+        <li><strong>sidePanel:</strong> displays Planbar beside webpages.</li>
+        <li><strong>notifications and alarms:</strong> schedules and displays reminders and focus-timer alerts.</li>
+        <li><strong>contextMenus:</strong> lets you turn text you explicitly select into a task.</li>
+        <li><strong>tabs:</strong> reads the title and URL of the regular browser tab you explicitly choose to save and opens Planbar pages when requested.</li>
+      </ul>
+
+      <h2>Chrome Web Store Limited Use</h2>
+      <p>Planbar's use and transfer of information received from Google APIs complies with the Chrome Web Store User Data Policy, including the Limited Use requirements. Data is used only to provide or improve the user-facing planning, sync, backup, tab-capture, context-menu, reminder, and focus features described above.</p>
+
+      <h2>Security and policy changes</h2>
+      <p>Planbar is built without external runtime dependencies or remote code. Because all software carries some risk, keep Chrome and the extension up to date. Material changes to this policy will be reflected on this page with a new “Last updated” date.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy questions, open an issue in the <a href="https://github.com/Jndvr/Planbar/issues">Planbar GitHub repository</a>.</p>
+    </main>
+  </body>
+</html>
