@@ -33,7 +33,7 @@ Planbar combines a fast todo list with daily, weekly, and monthly planning. The 
 - Custom categories with individual colors
 - Light and dark themes
 - JSON backup and import
-- Manual archive and optional auto-archive after 30 or 90 days
+- Manual archive and freely configurable auto-archive delays in hours, days, or weeks
 - German and English interfaces, including bilingual Smart Input
 - Save the most recently used browser tab as a task, including its source URL
 - Capture selected webpage text through the context menu
@@ -72,11 +72,13 @@ Write report tomorrow 14:30 #Work !high @weekly
 | `!hoch`, `!mittel`, `!niedrig` / `!high`, `!medium`, `!low` | Priority |
 | `@täglich`, `@wöchentlich`, `@monatlich` / `@daily`, `@weekly`, `@monthly` | Recurrence |
 
+A monthly task keeps its day of the month and falls back to the last day in shorter months, so a task on the 31st still appears on 28 February.
+
 ## Dependencies and Archive
 
 Dependencies can be selected while creating or editing a task. The compact picker suggests up to eight open, one-time tasks and includes search instead of displaying the entire task database. A dependent task remains visibly blocked and cannot be completed until all prerequisites are done. Planbar prevents circular dependency chains.
 
-Tasks can be archived manually from the edit dialog. The dedicated Archive view keeps them available for restoration without cluttering planning views, search, statistics, or focus mode. Auto-archive can be disabled or configured for completed tasks after 30 or 90 days.
+Tasks can be archived manually from the edit dialog. The dedicated Archive view keeps them available for restoration without cluttering planning views, search, statistics, or focus mode. Auto-archive accepts a custom delay in hours, days, or weeks; entering `0` disables it. Chrome alarms enforce the deadline even while the Side Panel is closed. The default is 48 hours.
 
 ## Save a Browser Tab
 
@@ -86,11 +88,13 @@ Use the tab button in Planbar's header to turn the most recently used regular br
 
 A task needs both a time and a selected reminder interval before Planbar can notify you. Reminders use Chrome's `alarms` and `notifications` APIs. Notifications must also be enabled for Chrome in your operating system.
 
+Archived tasks never notify. Recurring tasks schedule up to ten upcoming occurrences at a time, and the whole schedule is refreshed daily, at browser start, and whenever tasks change.
+
+The Pomodoro timer also runs on an alarm, so a round that finishes after you close the Side Panel still reports its result, and reopening Planbar restores the running session.
+
 ## Context Menu Capture
 
-Select text on any webpage, open the context menu, and choose **Add to Planbar**. Planbar creates a task for the current day and stores the source page in the task notes.
-
-> The current extension interface displays the context-menu action in German as **„Zu Planbar hinzufügen“**.
+Select text on any webpage, open the context menu, and choose **Add to Planbar**. Planbar creates a task for the current day and stores the source page in the task notes. The context menu, its confirmation, and all reminder notifications follow the language selected in Planbar's settings.
 
 ## Data Storage and Privacy
 
@@ -100,6 +104,10 @@ Planbar does not require a proprietary server and does not send data to the deve
 - `chrome.storage.sync` mirrors tasks for Chrome profiles with sync enabled.
 - Backups can be exported and restored as JSON files.
 - Tasks remain available after closing Chrome or restarting the computer.
+
+Local and synced data are merged per task, and the newer version of a task wins. A lagging, partial, or unavailable sync store therefore never removes local tasks. Deletions are recorded as tombstones for 60 days so a deleted task does not reappear from another device, and an explicit backup import takes precedence over them.
+
+Chrome Sync allows 512 stored items. Above 400 tasks Planbar keeps syncing the most recently updated open tasks, leaves archived tasks local-only, and reports this once in the interface. Local storage always keeps the complete set.
 
 Chrome may assign a different extension ID when the unpacked extension is installed on another computer. In that case, JSON export and import provide a reliable transfer method.
 
@@ -135,18 +143,31 @@ npm run check
 
 `npm run check` validates JavaScript syntax and runs smoke tests for task logic, smart input, reminders, context-menu capture, and background services.
 
+## Chrome Web Store package
+
+Create a clean upload archive with the extension manifest at the ZIP root:
+
+```bash
+npm run package:store
+```
+
+The versioned archive is written to `dist/` and contains only the runtime files required by Chrome. Update the version in `manifest.json` and `package.json` before building a new release.
+
 ### Project Structure
 
 ```text
 assets/             Icons and source assets
 tests/              Logic and background service tests
 background.js       Service worker, reminders, and context menu
+core.js             Dates, recurrence, and input validation shared by both contexts
 i18n.js             German and English interface strings
 manifest.json       Chrome Manifest V3 configuration
 sidepanel.html      Extension interface
 sidepanel.js        Planning, persistence, and interactions
 styles.css          Responsive layout and themes
 ```
+
+`core.js` holds every rule both the interface and the service worker need — date arithmetic, recurrence, and the validation applied to stored or imported data — so the two contexts cannot drift apart. `_locales/` covers only the manifest name and description; all runtime strings live in `i18n.js`.
 
 ## Contributing
 

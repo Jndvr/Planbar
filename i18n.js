@@ -20,8 +20,8 @@ globalThis.PlanbarI18n = (() => {
     "settings.eyebrow": "DEIN PLANER", "settings.title": "Alles im Blick.",
     "settings.description": "Planbar speichert lokal und synchronisiert deine Daten über dein angemeldetes Chrome-Profil.",
     "settings.language": "Sprache", "settings.languageDesc": "Oberfläche und intelligente Eingabe", "language.de": "Deutsch", "language.en": "English",
-    "settings.autoArchive": "Automatisch archivieren", "settings.autoArchiveDesc": "Erledigte Aufgaben nach einer Frist ausblenden",
-    "archive.never": "Nie", "archive.30days": "Nach 30 Tagen", "archive.90days": "Nach 90 Tagen",
+    "settings.autoArchive": "Automatisch archivieren", "settings.autoArchiveDesc": "Frist frei festlegen; 0 deaktiviert",
+    "settings.autoArchiveValue": "Archivierungsfrist", "settings.autoArchiveUnit": "Zeiteinheit", "archive.hours": "Stunden", "archive.days": "Tage", "archive.weeks": "Wochen",
     "settings.categories": "Eigene Bereiche",
     "settings.categoriesDesc": "Name und Farbe anpassen", "settings.addCategory": "+ Bereich hinzufügen", "settings.export": "Backup exportieren",
     "settings.import": "Backup importieren", "settings.shortcutNew": "Schnell neue Aufgabe", "settings.shortcutSearch": "Suche öffnen",
@@ -48,7 +48,19 @@ globalThis.PlanbarI18n = (() => {
     "toast.deleted": "Aufgabe gelöscht", "toast.deleteUndone": "Löschen rückgängig gemacht", "action.undo": "Rückgängig", "toast.archived": "Aufgabe archiviert", "toast.restored": "Aufgabe wiederhergestellt",
     "toast.blocked": "Erledige zuerst: {tasks}", "toast.tabSaved": "Tab als Aufgabe gespeichert", "toast.noTab": "Kein speicherbarer Browser-Tab gefunden",
     "toast.circular": "Zirkuläre Abhängigkeiten sind nicht möglich", "toast.done": "Geschafft – gut gemacht!", "toast.openAgain": "Wieder als offen markiert",
-    "smart.detected": "Erkannt: {items}", "smart.date": "Datum", "smart.time": "Uhrzeit", "smart.category": "Bereich", "smart.priority": "Priorität", "smart.repeat": "Wiederholung"
+    "smart.detected": "Erkannt: {items}", "smart.date": "Datum", "smart.time": "Uhrzeit", "smart.category": "Bereich", "smart.priority": "Priorität", "smart.repeat": "Wiederholung",
+    "toast.moved": "Auf {date} verschoben", "toast.reordered": "Reihenfolge gespeichert", "toast.categoryMin": "Mindestens ein Bereich muss bleiben",
+    "toast.categoryRemoved": "Bereich entfernt, Aufgaben wurden verschoben", "toast.exported": "Backup exportiert", "toast.imported": "{count} Aufgaben importiert",
+    "toast.importFailed": "Backup konnte nicht gelesen werden", "toast.syncPaused": "Zu viele Aufgaben für Chrome Sync – lokal wurde gespeichert",
+    "category.fallback": "Bereich", "focus.noOpenTask": "Keine offene Aufgabe", "focus.again": "Nochmal", "focus.notificationTitle": "Planbar Fokus",
+    "focus.roundDone": "Fokusrunde beendet", "focus.roundDoneTask": "Fokusrunde beendet: {title}", "focus.breakDone": "Pause beendet – bereit für die nächste Runde?",
+    "aria.progress": "{percent} Prozent erledigt", "aria.monthGrid": "Monatskalender", "aria.weekdays": "Wochentage", "aria.filter": "Aufgaben filtern",
+    "aria.previous": "Zurück", "aria.next": "Weiter", "aria.deleteCategory": "Bereich löschen", "aria.categoryColor": "Farbe für {name}",
+    "aria.categoryName": "Name des Bereichs", "aria.removeStep": "Schritt entfernen", "aria.newTask": "Neue Aufgabe hinzufügen",
+    "aria.closeDialog": "Dialog schließen", "aria.closeInfo": "Einstellungen schließen", "aria.closeFocus": "Fokusmodus schließen",
+    "aria.viewTabs": "Zeitraum auswählen", "aria.quickDates": "Aufgabe schnell verschieben",
+    "aria.taskCount": "{count} Aufgaben", "aria.taskCountOne": "1 Aufgabe",
+    "bg.contextMenu": "„%s“ zu Planbar hinzufügen", "bg.captured": "Zu Planbar hinzugefügt", "bg.capturedFrom": "Erfasst von: {url}", "bg.atTime": "{when} um {time}"
   };
 
   const en = {
@@ -71,8 +83,8 @@ globalThis.PlanbarI18n = (() => {
     "task.notesPlaceholder": "Details, links, or thoughts…", "task.delete": "Delete task", "task.deleteConfirm": "Really delete?", "task.archive": "Archive",
     "task.restore": "Restore", "task.save": "Save", "settings.eyebrow": "YOUR PLANNER", "settings.title": "Everything in view.",
     "settings.description": "Planbar stores data locally and syncs it through your signed-in Chrome profile.", "settings.language": "Language",
-    "settings.languageDesc": "Interface and smart input", "settings.autoArchive": "Auto archive", "settings.autoArchiveDesc": "Hide completed tasks after a delay",
-    "archive.never": "Never", "archive.30days": "After 30 days", "archive.90days": "After 90 days", "settings.categories": "Custom categories", "settings.categoriesDesc": "Customize name and color",
+    "settings.languageDesc": "Interface and smart input", "settings.autoArchive": "Auto archive", "settings.autoArchiveDesc": "Set any delay; 0 disables it",
+    "settings.autoArchiveValue": "Archive delay", "settings.autoArchiveUnit": "Time unit", "archive.hours": "Hours", "archive.days": "Days", "archive.weeks": "Weeks", "settings.categories": "Custom categories", "settings.categoriesDesc": "Customize name and color",
     "settings.addCategory": "+ Add category", "settings.export": "Export backup", "settings.import": "Import backup",
     "settings.shortcutNew": "Quickly create a task", "settings.shortcutSearch": "Open search", "focus.eyebrow": "FOCUS MODE",
     "focus.title": "One thing at a time.", "focus.task": "Task", "focus.session": "Focus · 25 min", "focus.break": "Break · 5 min",
@@ -98,7 +110,19 @@ globalThis.PlanbarI18n = (() => {
     "toast.archived": "Task archived", "toast.restored": "Task restored", "toast.blocked": "Complete first: {tasks}", "toast.tabSaved": "Tab saved as a task",
     "toast.noTab": "No browser tab available to save", "toast.circular": "Circular dependencies are not allowed", "toast.done": "Done — great work!",
     "toast.openAgain": "Marked as open again", "smart.detected": "Detected: {items}", "smart.date": "Date", "smart.time": "Time",
-    "smart.category": "Category", "smart.priority": "Priority", "smart.repeat": "Recurrence"
+    "smart.category": "Category", "smart.priority": "Priority", "smart.repeat": "Recurrence",
+    "toast.moved": "Moved to {date}", "toast.reordered": "Order saved", "toast.categoryMin": "At least one category has to remain",
+    "toast.categoryRemoved": "Category removed, its tasks were moved", "toast.exported": "Backup exported", "toast.imported": "{count} tasks imported",
+    "toast.importFailed": "The backup could not be read", "toast.syncPaused": "Too many tasks for Chrome Sync – saved locally",
+    "category.fallback": "Category", "focus.noOpenTask": "No open task", "focus.again": "Again", "focus.notificationTitle": "Planbar Focus",
+    "focus.roundDone": "Focus round complete", "focus.roundDoneTask": "Focus round complete: {title}", "focus.breakDone": "Break over — ready for the next round?",
+    "aria.progress": "{percent} percent complete", "aria.monthGrid": "Month calendar", "aria.weekdays": "Weekdays", "aria.filter": "Filter tasks",
+    "aria.previous": "Previous", "aria.next": "Next", "aria.deleteCategory": "Delete category", "aria.categoryColor": "Color for {name}",
+    "aria.categoryName": "Category name", "aria.removeStep": "Remove step", "aria.newTask": "Add a new task",
+    "aria.closeDialog": "Close dialog", "aria.closeInfo": "Close settings", "aria.closeFocus": "Close focus mode",
+    "aria.viewTabs": "Select a period", "aria.quickDates": "Move the task quickly",
+    "aria.taskCount": "{count} tasks", "aria.taskCountOne": "1 task",
+    "bg.contextMenu": "Add “%s” to Planbar", "bg.captured": "Added to Planbar", "bg.capturedFrom": "Captured from: {url}", "bg.atTime": "{when} at {time}"
   };
 
   function t(key, values = {}, language = "de") {

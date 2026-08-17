@@ -43,7 +43,7 @@
         <button class="clear-search" id="clearSearch" aria-label="Suche schließen" data-i18n-aria="search.close">×</button>
       </div>
 
-      <nav class="view-tabs" aria-label="Zeitraum auswählen">
+      <nav class="view-tabs" aria-label="Zeitraum auswählen" data-i18n-aria="aria.viewTabs">
         <button class="view-tab active" data-view="day" data-i18n="nav.day">Tag</button>
         <button class="view-tab" data-view="week" data-i18n="nav.week">Woche</button>
         <button class="view-tab" data-view="month" data-i18n="nav.month">Monat</button>
@@ -52,7 +52,7 @@
 
       <main id="mainContent" tabindex="-1"></main>
 
-      <button class="fab" id="addButton" aria-label="Neue Aufgabe hinzufügen">
+      <button class="fab" id="addButton" aria-label="Neue Aufgabe hinzufügen" data-i18n-aria="aria.newTask">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         <span data-i18n="task.add">Aufgabe</span>
         <kbd>⌘↵</kbd>
@@ -71,7 +71,7 @@
           <p class="eyebrow" data-i18n="task.planning">PLANUNG</p>
           <h2 id="sheetTitle">Neue Aufgabe</h2>
         </div>
-        <button class="icon-btn sheet-close" id="closeSheet" aria-label="Dialog schließen">×</button>
+        <button class="icon-btn sheet-close" id="closeSheet" aria-label="Dialog schließen" data-i18n-aria="aria.closeDialog">×</button>
       </div>
       <form id="taskForm">
         <input type="hidden" id="taskId" />
@@ -92,7 +92,7 @@
           </label>
         </div>
 
-        <div class="quick-date-row" aria-label="Aufgabe schnell verschieben">
+        <div class="quick-date-row" role="group" aria-label="Aufgabe schnell verschieben" data-i18n-aria="aria.quickDates">
           <button type="button" data-quick-date="today" data-i18n="quick.today">Heute</button>
           <button type="button" data-quick-date="tomorrow" data-i18n="quick.tomorrow">Morgen</button>
           <button type="button" data-quick-date="next-week" data-i18n="quick.nextWeek">Nächste Woche</button>
@@ -177,7 +177,7 @@
 
     <div class="sheet-backdrop" id="infoBackdrop" hidden></div>
     <section class="info-sheet" id="infoSheet" role="dialog" aria-modal="true" aria-labelledby="infoTitle" hidden>
-      <button class="icon-btn info-close" id="closeInfo" aria-label="Info schließen">×</button>
+      <button class="icon-btn info-close" id="closeInfo" aria-label="Einstellungen schließen" data-i18n-aria="aria.closeInfo">×</button>
       <span class="large-brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="m8.5 14 2 2 4.5-5"/></svg>
       </span>
@@ -189,8 +189,15 @@
         <select id="languageSelect"><option value="de" data-i18n="language.de">Deutsch</option><option value="en" data-i18n="language.en">English</option></select>
       </div>
       <div class="settings-block">
-        <div class="settings-title"><strong data-i18n="settings.autoArchive">Automatisch archivieren</strong><span data-i18n="settings.autoArchiveDesc">Erledigte Aufgaben nach einer Frist ausblenden</span></div>
-        <select id="autoArchiveDays"><option value="0" data-i18n="archive.never">Nie</option><option value="30" data-i18n="archive.30days">Nach 30 Tagen</option><option value="90" data-i18n="archive.90days">Nach 90 Tagen</option></select>
+        <div class="settings-title"><strong data-i18n="settings.autoArchive">Automatisch archivieren</strong><span data-i18n="settings.autoArchiveDesc">Frist frei festlegen; 0 deaktiviert</span></div>
+        <div class="archive-delay-control">
+          <input id="autoArchiveValue" type="number" min="0" max="9999" step="any" value="48" inputmode="decimal" aria-label="Archivierungsfrist" data-i18n-aria="settings.autoArchiveValue" />
+          <select id="autoArchiveUnit" aria-label="Zeiteinheit" data-i18n-aria="settings.autoArchiveUnit">
+            <option value="hours" data-i18n="archive.hours">Stunden</option>
+            <option value="days" data-i18n="archive.days">Tage</option>
+            <option value="weeks" data-i18n="archive.weeks">Wochen</option>
+          </select>
+        </div>
       </div>
       <div class="category-settings">
         <div class="settings-title"><strong data-i18n="settings.categories">Eigene Bereiche</strong><span data-i18n="settings.categoriesDesc">Name und Farbe anpassen</span></div>
@@ -208,7 +215,7 @@
 
     <div class="sheet-backdrop" id="focusBackdrop" hidden></div>
     <section class="focus-sheet" id="focusSheet" role="dialog" aria-modal="true" aria-labelledby="focusTitle" hidden>
-      <button class="icon-btn focus-close" id="closeFocus" aria-label="Fokusmodus schließen">×</button>
+      <button class="icon-btn focus-close" id="closeFocus" aria-label="Fokusmodus schließen" data-i18n-aria="aria.closeFocus">×</button>
       <p class="eyebrow" data-i18n="focus.eyebrow">FOKUSMODUS</p>
       <h2 id="focusTitle" data-i18n="focus.title">Eine Sache nach der anderen.</h2>
       <label class="field focus-task-select">
@@ -231,6 +238,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+    <script src="core.js"></script>
     <script src="i18n.js"></script>
     <script src="sidepanel.js"></script>
   </body>

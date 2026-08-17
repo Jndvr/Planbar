@@ -467,6 +467,9 @@ kbd { font-family: inherit; }
 .settings-title span { margin-top: 2px; color: var(--muted); font-size: 9px; }
 .settings-block input { width: 64px; padding: 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--surface); text-align: center; }
 .settings-block select { max-width: 135px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--surface); font-size: 10px; }
+.archive-delay-control { display: grid; grid-template-columns: 64px minmax(82px, 1fr); gap: 6px; flex: 0 0 auto; }
+.archive-delay-control input { width: 64px; }
+.archive-delay-control select { width: 100%; }
 #categoryList { display: grid; gap: 6px; margin: 11px 0 8px; }
 .category-setting { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; gap: 7px; }
 .category-setting input[type="color"] { width: 27px; height: 27px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
