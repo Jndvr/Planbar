@@ -1,7 +1,15 @@
-const STORAGE_KEY = "planbarData";
-const SYNC_META_KEY = "planbarMeta";
-const SYNC_TASK_PREFIX = "planbarTask_";
+const {
+  STORAGE_KEY, SYNC_META_KEY, SYNC_TASK_PREFIX, FOCUS_KEY, FOCUS_ALARM,
+  dateString, todayString, parseDate, addDays, startOfWeek,
+  isValidDate, safeId, safeDate, safeTime, safeReminder,
+  occursOn, isOccurrenceComplete, autoArchiveConfig, autoArchiveDelayMs,
+} = globalThis.PlanbarCore;
 const { t: translate, apply: applyTranslations } = globalThis.PlanbarI18n;
+
+// chrome.storage.sync allows 512 items; stay clear of the ceiling so writes keep succeeding.
+const SYNC_TASK_LIMIT = 400;
+const DELETION_RETENTION_DAYS = 60;
+const DELETION_LIMIT = 150;
 
 const DEFAULT_CATEGORIES = [
   { id: "work", label: "Arbeit", color: "#4f8b69", isDefault: true },
@@ -11,22 +19,18 @@ const DEFAULT_CATEGORIES = [
   { id: "other", label: "Sonstiges", color: "#9a8c70", isDefault: true },
 ];
 
-const REPEAT_LABELS = {
-  daily: "Täglich",
-  weekly: "Wöchentlich",
-  monthly: "Monatlich",
-};
-
 const state = {
   tasks: [],
   categories: DEFAULT_CATEGORIES.map((item) => ({ ...item })),
+  deletions: {},
   view: "day",
   selectedDate: todayString(),
   filter: "open",
   search: "",
   theme: "light",
   language: "de",
-  autoArchiveDays: 30,
+  autoArchiveValue: 48,
+  autoArchiveUnit: "hours",
 };
 
 const focusState = {
@@ -39,6 +43,7 @@ const focusState = {
 };
 
 const elements = {
+  shell: document.querySelector(".app-shell"),
   main: document.querySelector("#mainContent"),
   tabs: [...document.querySelectorAll(".view-tab")],
   addButton: document.querySelector("#addButton"),
@@ -78,7 +83,8 @@ const elements = {
   infoBackdrop: document.querySelector("#infoBackdrop"),
   closeInfo: document.querySelector("#closeInfo"),
   languageSelect: document.querySelector("#languageSelect"),
-  autoArchiveDays: document.querySelector("#autoArchiveDays"),
+  autoArchiveValue: document.querySelector("#autoArchiveValue"),
+  autoArchiveUnit: document.querySelector("#autoArchiveUnit"),
   categoryList: document.querySelector("#categoryList"),
   addCategory: document.querySelector("#addCategory"),
   exportData: document.querySelector("#exportData"),
@@ -100,10 +106,13 @@ const elements = {
 
 let toastTimer;
 let draggedTaskId = "";
-let draggedOccurrenceDate = "";
 let storageReloadTimer;
 let dependencySelection = new Set();
 let lastDeletedTask = null;
+let lastWriteStamp = 0;
+let syncLimitWarned = false;
+let focusPendingTaskId = "";
+const dialogStack = [];
 
 init();
 
@@ -113,49 +122,56 @@ async function init() {
 
   const saved = await loadData();
   applySavedData(saved);
-  if (params.get("date")) state.selectedDate = params.get("date");
+  if (isValidDate(params.get("date"))) state.selectedDate = params.get("date");
   applyTheme();
   applyLanguage();
-  autoArchiveTasks();
+  const archived = autoArchiveTasks();
   populateCategorySelect();
   bindStaticEvents();
   bindStorageUpdates();
   render();
-  await persist();
-  if (params.get("task")) openTaskSheet(params.get("task"));
+  await restoreFocusSession();
+  if (archived) await persist();
+  if (params.get("task")) openTaskSheet(safeId(params.get("task")));
 }
 
 function applySavedData(saved) {
+  state.theme = saved.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const browserLanguage = globalThis.navigator?.language?.toLowerCase().startsWith("en") ? "en" : "de";
+  state.language = ["de", "en"].includes(saved.language) ? saved.language : browserLanguage;
+  const archiveConfig = autoArchiveConfig(saved);
+  state.autoArchiveValue = archiveConfig.value;
+  state.autoArchiveUnit = archiveConfig.unit;
+  // Remember which stored revision this state came from, so later writes can tell foreign changes apart.
+  lastWriteStamp = Number(saved.updatedAt) || lastWriteStamp;
+  state.deletions = pruneDeletions(saved.deletions);
   state.tasks = Array.isArray(saved.tasks) ? saved.tasks.map(normalizeTask) : [];
   state.categories = Array.isArray(saved.categories) && saved.categories.length
     ? saved.categories.map(normalizeCategory)
     : DEFAULT_CATEGORIES.map((item) => ({ ...item }));
-  state.theme = saved.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const browserLanguage = globalThis.navigator?.language?.toLowerCase().startsWith("en") ? "en" : "de";
-  state.language = ["de", "en"].includes(saved.language) ? saved.language : browserLanguage;
-  state.autoArchiveDays = [0, 30, 90].includes(Number(saved.autoArchiveDays)) ? Number(saved.autoArchiveDays) : 30;
 }
 
 function normalizeTask(task) {
   return {
     ...task,
-    id: task.id || crypto.randomUUID(),
+    id: safeId(task.id) || crypto.randomUUID(),
     title: String(task.title || "Untitled task").slice(0, 120),
-    date: task.date || todayString(),
-    time: task.time || "",
+    date: safeDate(task.date),
+    time: safeTime(task.time),
     priority: ["low", "medium", "high"].includes(task.priority) ? task.priority : "medium",
-    category: task.category || "other",
+    category: safeId(task.category) || "other",
     repeat: ["none", "daily", "weekly", "monthly"].includes(task.repeat) ? task.repeat : "none",
-    reminder: task.reminder ?? "none",
-    notes: task.notes || "",
+    reminder: safeReminder(task.reminder),
+    notes: String(task.notes || "").slice(0, 500),
     subtasks: Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({
-      id: item.id || crypto.randomUUID(),
+      id: safeId(item.id) || crypto.randomUUID(),
       title: String(item.title || "").slice(0, 120),
       completed: Boolean(item.completed),
     })).filter((item) => item.title) : [],
     completed: Boolean(task.completed),
-    completionDates: Array.isArray(task.completionDates) ? task.completionDates : [],
-    dependencyIds: Array.isArray(task.dependencyIds) ? [...new Set(task.dependencyIds.map(String))] : [],
+    completedAt: Number(task.completedAt) || null,
+    completionDates: Array.isArray(task.completionDates) ? [...new Set(task.completionDates.filter(isValidDate))] : [],
+    dependencyIds: Array.isArray(task.dependencyIds) ? [...new Set(task.dependencyIds.map(safeId).filter(Boolean))] : [],
     archivedAt: task.archivedAt ? Number(task.archivedAt) : null,
     createdAt: Number(task.createdAt) || Date.now(),
     updatedAt: Number(task.updatedAt) || Date.now(),
@@ -164,11 +180,48 @@ function normalizeTask(task) {
 
 function normalizeCategory(category) {
   return {
-    id: String(category.id || crypto.randomUUID()),
-    label: String(category.label || "Bereich").slice(0, 32),
+    id: safeId(category.id) || crypto.randomUUID(),
+    label: String(category.label || "").slice(0, 32) || t("category.fallback"),
     color: validColor(category.color) ? category.color : "#4f8b69",
     isDefault: Boolean(category.isDefault || DEFAULT_CATEGORIES.some((item) => item.id === category.id)),
   };
+}
+
+function mergeTaskLists(...lists) {
+  const merged = new Map();
+  for (const list of lists) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const task = normalizeTask(item);
+      const existing = merged.get(task.id);
+      if (!existing || task.updatedAt >= existing.updatedAt) merged.set(task.id, task);
+    }
+  }
+  return [...merged.values()];
+}
+
+function mergeDeletions(...maps) {
+  const merged = {};
+  for (const map of maps) {
+    for (const [id, value] of Object.entries(map || {})) {
+      const stamp = Number(value) || 0;
+      if (!safeId(id) || stamp <= (merged[id] || 0)) continue;
+      merged[id] = stamp;
+    }
+  }
+  return merged;
+}
+
+// A tombstone only wins over a task that has not been edited since it was deleted.
+function applyDeletions(tasks, deletions) {
+  return tasks.filter((task) => (deletions[task.id] || 0) < task.updatedAt);
+}
+
+function pruneDeletions(deletions) {
+  const cutoff = Date.now() - DELETION_RETENTION_DAYS * 86400000;
+  return Object.fromEntries(Object.entries(mergeDeletions(deletions))
+    .filter(([, stamp]) => stamp > cutoff)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, DELETION_LIMIT));
 }
 
 function t(key, values = {}) { return translate(key, values, state.language); }
@@ -178,7 +231,8 @@ function categoryLabel(category) { return category?.isDefault ? t(`category.${ca
 function applyLanguage() {
   applyTranslations(document, state.language);
   elements.languageSelect.value = state.language;
-  elements.autoArchiveDays.value = String(state.autoArchiveDays);
+  elements.autoArchiveValue.value = String(state.autoArchiveValue);
+  elements.autoArchiveUnit.value = state.autoArchiveUnit;
 }
 
 function bindStaticEvents() {
@@ -234,12 +288,17 @@ function bindStaticEvents() {
     await persist();
     render();
   });
-  elements.autoArchiveDays.addEventListener("change", async () => {
-    state.autoArchiveDays = [0, 30, 90].includes(Number(elements.autoArchiveDays.value)) ? Number(elements.autoArchiveDays.value) : 30;
+  const updateAutoArchive = async () => {
+    const config = autoArchiveConfig({ autoArchiveValue: elements.autoArchiveValue.value, autoArchiveUnit: elements.autoArchiveUnit.value });
+    state.autoArchiveValue = config.value;
+    state.autoArchiveUnit = config.unit;
+    elements.autoArchiveValue.value = String(config.value);
     autoArchiveTasks();
     await persist();
     render();
-  });
+  };
+  elements.autoArchiveValue.addEventListener("change", updateAutoArchive);
+  elements.autoArchiveUnit.addEventListener("change", updateAutoArchive);
   elements.addCategory.addEventListener("click", addCategory);
   elements.exportData.addEventListener("click", exportBackup);
   elements.importData.addEventListener("click", () => elements.importFile.click());
@@ -271,21 +330,70 @@ function bindStaticEvents() {
 
   document.addEventListener("keydown", (event) => {
     const command = event.metaKey || event.ctrlKey;
+    const dialog = topDialog();
     if (command && event.key === "Enter") {
       event.preventDefault();
-      openTaskSheet();
+      if (!dialog) openTaskSheet();
+      else if (dialog.sheet === elements.taskSheet) elements.taskForm.requestSubmit?.();
+      return;
     }
     if (command && event.key.toLowerCase() === "k") {
+      if (dialog) return;
       event.preventDefault();
       openSearch();
+      return;
     }
-    if (event.key === "Escape") {
-      closeTaskSheet();
-      closeInfo();
-      closeFocus();
-      if (!elements.searchPanel.hidden) closeSearch();
+    if (event.key === "Tab" && dialog) trapFocus(event, dialog.sheet);
+    if (event.key !== "Escape") return;
+    if (dialog) {
+      event.preventDefault();
+      closeDialog(dialog.sheet);
+      return;
     }
+    if (!elements.searchPanel.hidden) closeSearch();
   });
+}
+
+// One dialog at a time: the shell goes inert, Escape closes only the top sheet, focus returns where it was.
+function openDialog(sheet, backdrop, focusTarget) {
+  if (dialogStack.some((entry) => entry.sheet === sheet)) return;
+  const previous = document.activeElement;
+  sheet.hidden = false;
+  backdrop.hidden = false;
+  // Blur before the shell turns inert, otherwise Chrome's focus fixup resets focus to the body afterwards.
+  previous?.blur?.();
+  if (elements.shell) elements.shell.inert = true;
+  dialogStack.push({ sheet, backdrop, previous });
+  if (focusTarget) requestAnimationFrame(() => focusTarget.focus());
+}
+
+function closeDialog(sheet) {
+  const index = dialogStack.findIndex((entry) => entry.sheet === sheet);
+  if (index < 0) return;
+  const [entry] = dialogStack.splice(index, 1);
+  entry.sheet.hidden = true;
+  entry.backdrop.hidden = true;
+  if (elements.shell && !dialogStack.length) elements.shell.inert = false;
+  entry.previous?.focus?.();
+}
+
+function topDialog() {
+  return dialogStack[dialogStack.length - 1];
+}
+
+function trapFocus(event, sheet) {
+  const focusable = [...sheet.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden && element.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function bindStorageUpdates() {
@@ -293,28 +401,46 @@ function bindStorageUpdates() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes[STORAGE_KEY]?.newValue) {
       const incoming = changes[STORAGE_KEY].newValue;
-      const incomingStamp = Math.max(0, ...(incoming.tasks || []).map((task) => Number(task.updatedAt) || 0));
-      const currentStamp = Math.max(0, ...state.tasks.map((task) => Number(task.updatedAt) || 0));
-      if ((incoming.tasks || []).length !== state.tasks.length || incomingStamp > currentStamp) {
-        applySavedData(incoming);
-        applyTheme();
-        applyLanguage();
-        populateCategorySelect();
-        render();
-      }
+      if ((Number(incoming.updatedAt) || 0) === lastWriteStamp) return;
+      applySnapshot(mergeIntoState(incoming));
+      return;
     }
     if (area === "sync" && Object.keys(changes).some((key) => key === SYNC_META_KEY || key.startsWith(SYNC_TASK_PREFIX))) {
+      if ((Number(changes[SYNC_META_KEY]?.newValue?.updatedAt) || 0) === lastWriteStamp) return;
       clearTimeout(storageReloadTimer);
-      storageReloadTimer = setTimeout(async () => {
-        const saved = await loadData();
-        applySavedData(saved);
-        applyLanguage();
-        populateCategorySelect();
-        applyTheme();
-        render();
-      }, 350);
+      storageReloadTimer = setTimeout(async () => applySnapshot(await loadData()), 350);
     }
   });
+}
+
+function currentSnapshot() {
+  return {
+    tasks: state.tasks,
+    categories: state.categories,
+    deletions: state.deletions,
+    theme: state.theme,
+    language: state.language,
+    autoArchiveValue: state.autoArchiveValue,
+    autoArchiveUnit: state.autoArchiveUnit,
+    updatedAt: lastWriteStamp,
+  };
+}
+
+// Never let an incoming payload replace local tasks outright — merge per task and let tombstones decide.
+function mergeIntoState(incoming) {
+  const deletions = pruneDeletions(mergeDeletions(state.deletions, incoming.deletions));
+  const mine = currentSnapshot();
+  const base = (Number(incoming.updatedAt) || 0) > lastWriteStamp ? { ...mine, ...incoming } : { ...incoming, ...mine };
+  // Ours is listed last so an equal timestamp keeps the copy the user is looking at.
+  return { ...base, deletions, tasks: applyDeletions(mergeTaskLists(incoming.tasks, state.tasks), deletions) };
+}
+
+function applySnapshot(snapshot) {
+  applySavedData(snapshot);
+  applyTheme();
+  applyLanguage();
+  populateCategorySelect();
+  render();
 }
 
 function render() {
@@ -342,7 +468,7 @@ function renderDayView() {
           <h1>${escapeHtml(greeting.title)}</h1>
           <p class="hero-subtitle">${daySummary(all.length, completed)}</p>
         </div>
-        <div class="progress-ring" style="--progress:${percent * 3.6}deg" aria-label="${percent} Prozent erledigt"><span>${percent}%</span></div>
+        ${renderProgressRing(percent)}
       </div>
       ${renderDateControls(formatLongDate(date))}
     </section>
@@ -371,7 +497,7 @@ function renderWeekView() {
           <h1>${t("week.title")}</h1>
           <p class="hero-subtitle">${weekItems.length ? t("week.progress", { done: completed, total: weekItems.length }) : t("week.free")}</p>
         </div>
-        <div class="progress-ring" style="--progress:${percent * 3.6}deg"><span>${percent}%</span></div>
+        ${renderProgressRing(percent)}
       </div>
       ${renderDateControls(`${formatShortDate(monday)} – ${formatShortDate(days[6])}`)}
     </section>
@@ -402,8 +528,8 @@ function renderMonthView() {
       </div>
       ${renderDateControls(first.toLocaleDateString(locale(), { month: "long", year: "numeric" }))}
     </section>
-    <div class="month-grid" role="grid" aria-label="Monatskalender">
-      ${Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(new Date()), index).toLocaleDateString(locale(), { weekday: "short" }).replace(".", "")).map((day) => `<div class="month-weekday">${day}</div>`).join("")}
+    <div class="month-grid" role="group" aria-label="${escapeHtml(t("aria.monthGrid"))}">
+      ${Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(new Date()), index).toLocaleDateString(locale(), { weekday: "short" }).replace(".", "")).map((day) => `<div class="month-weekday" aria-hidden="true">${escapeHtml(day)}</div>`).join("")}
       ${days.map((day) => renderMonthDay(day, selected)).join("")}
     </div>
     ${renderListSection(filtered, selectedItems.length, formatAgendaTitle(selected))}
@@ -433,26 +559,36 @@ function renderArchiveView() {
   bindDynamicEvents();
 }
 
+function renderProgressRing(percent) {
+  return `<div class="progress-ring" role="img" style="--progress:${percent * 3.6}deg" aria-label="${escapeHtml(t("aria.progress", { percent }))}"><span>${percent}%</span></div>`;
+}
+
 function renderDateControls(label) {
   return `<div class="date-controls">
-    <button class="nav-btn" data-nav="prev" aria-label="Previous">‹</button>
+    <button class="nav-btn" data-nav="prev" aria-label="${escapeHtml(t("aria.previous"))}">‹</button>
     <span class="date-label">${escapeHtml(label)}</span>
     <button class="today-btn" data-nav="today">${t("common.today")}</button>
-    <button class="nav-btn" data-nav="next" aria-label="Next">›</button>
+    <button class="nav-btn" data-nav="next" aria-label="${escapeHtml(t("aria.next"))}">›</button>
   </div>`;
 }
 
 function renderWeekStrip(selected) {
   const monday = startOfWeek(selected);
-  return `<div class="week-strip" aria-label="Wochentage">${Array.from({ length: 7 }, (_, index) => {
+  return `<div class="week-strip" role="group" aria-label="${escapeHtml(t("aria.weekdays"))}">${Array.from({ length: 7 }, (_, index) => {
     const day = addDays(monday, index);
     const value = dateString(day);
-    const hasTasks = occurrencesForDate(value).length > 0;
-    return `<button class="day-pill ${sameDay(day, selected) ? "selected" : ""} ${value === todayString() ? "today" : ""}" data-date="${value}">
-      <span class="weekday">${day.toLocaleDateString(locale(), { weekday: "short" }).replace(".", "")}</span>
-      <span class="day-number">${day.getDate()}</span>${hasTasks ? '<span class="day-dot"></span>' : ""}
+    const count = occurrencesForDate(value).length;
+    return `<button class="day-pill ${sameDay(day, selected) ? "selected" : ""} ${value === todayString() ? "today" : ""}" data-date="${escapeHtml(value)}"
+      aria-label="${escapeHtml(dayButtonLabel(day, count))}" aria-pressed="${sameDay(day, selected)}"${value === todayString() ? ' aria-current="date"' : ""}>
+      <span class="weekday" aria-hidden="true">${escapeHtml(day.toLocaleDateString(locale(), { weekday: "short" }).replace(".", ""))}</span>
+      <span class="day-number" aria-hidden="true">${day.getDate()}</span>${count ? '<span class="day-dot"></span>' : ""}
     </button>`;
   }).join("")}</div>`;
+}
+
+function dayButtonLabel(day, count) {
+  if (!count) return formatLongDate(day);
+  return `${formatLongDate(day)}, ${t(count === 1 ? "aria.taskCountOne" : "aria.taskCount", { count })}`;
 }
 
 function renderSummaryCard(items, completed, date, isWeek = false) {
@@ -483,10 +619,11 @@ function renderListSection(items, total, title) {
 }
 
 function renderFilters() {
-  return `<div class="filter-row" aria-label="Aufgaben filtern">
-    <button class="filter-chip ${state.filter === "open" ? "active" : ""}" data-filter="open">${t("common.open")}</button>
-    <button class="filter-chip ${state.filter === "all" ? "active" : ""}" data-filter="all">${t("common.all")}</button>
-    <button class="filter-chip ${state.filter === "done" ? "active" : ""}" data-filter="done">${t("common.done")}</button>
+  const chip = (value, label) => `<button class="filter-chip ${state.filter === value ? "active" : ""}" data-filter="${value}" aria-pressed="${state.filter === value}">${label}</button>`;
+  return `<div class="filter-row" role="group" aria-label="${escapeHtml(t("aria.filter"))}">
+    ${chip("open", t("common.open"))}
+    ${chip("all", t("common.all"))}
+    ${chip("done", t("common.done"))}
   </div>`;
 }
 
@@ -504,9 +641,11 @@ function renderDayGroup(day) {
 
 function renderMonthDay(day, selected) {
   const value = dateString(day);
-  const count = Math.min(occurrencesForDate(value).length, 3);
-  return `<button class="month-day ${day.getMonth() !== selected.getMonth() ? "other" : ""} ${sameDay(day, selected) ? "selected" : ""} ${value === todayString() ? "today" : ""}" data-date="${value}" aria-label="${formatLongDate(day)}">
-    ${day.getDate()}${count ? `<span class="calendar-dots">${"<i></i>".repeat(count)}</span>` : ""}
+  const count = occurrencesForDate(value).length;
+  const dots = Math.min(count, 3);
+  return `<button class="month-day ${day.getMonth() !== selected.getMonth() ? "other" : ""} ${sameDay(day, selected) ? "selected" : ""} ${value === todayString() ? "today" : ""}" data-date="${escapeHtml(value)}"
+    aria-label="${escapeHtml(dayButtonLabel(day, count))}" aria-pressed="${sameDay(day, selected)}"${value === todayString() ? ' aria-current="date"' : ""}>
+    ${day.getDate()}${dots ? `<span class="calendar-dots" aria-hidden="true">${"<i></i>".repeat(dots)}</span>` : ""}
   </button>`;
 }
 
@@ -524,13 +663,13 @@ function renderTaskCard(item) {
   const subtaskDone = (task.subtasks || []).filter((subtask) => subtask.completed).length;
   const subtaskMeta = task.subtasks?.length ? `<span class="meta-dot"></span><span class="subtask-progress">${t("task.steps", { done: subtaskDone, total: task.subtasks.length })}</span>` : "";
   const blockedMeta = unresolved.length ? `<span class="meta-dot"></span><span class="blocked-label">${t("task.blocked", { count: unresolved.length })}</span>` : "";
-  return `<article class="task-card priority-${task.priority} ${completed ? "completed" : ""} ${overdue ? "overdue" : ""} ${unresolved.length ? "blocked" : ""} ${archived ? "archived" : ""}" draggable="${archived ? "false" : "true"}" data-task-id="${task.id}" data-occurrence-date="${occurrenceDate}">
+  return `<article class="task-card priority-${task.priority} ${completed ? "completed" : ""} ${overdue ? "overdue" : ""} ${unresolved.length ? "blocked" : ""} ${archived ? "archived" : ""}" draggable="${archived ? "false" : "true"}" data-task-id="${escapeHtml(task.id)}" data-occurrence-date="${escapeHtml(occurrenceDate)}">
     <button class="check-button" aria-label="${completed ? t("common.open") : t("common.done")}"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></button>
     <button class="task-body">
       <span class="task-title">${escapeHtml(task.title)}</span>
       <span class="task-meta"><span>${escapeHtml(time)}</span><span class="meta-dot"></span><i class="category-swatch" style="--category-color:${validColor(category?.color) ? category.color : "#4f8b69"}"></i><span class="category-tag">${escapeHtml(categoryLabel(category))}</span>${repeat}${subtaskMeta}${blockedMeta}${dateMeta}</span>
     </button>
-    <div class="card-actions">${archived ? `<button class="postpone-btn" data-restore="${task.id}">${t("common.restore")}</button>` : overdue ? `<button class="postpone-btn" data-postpone="${task.id}" title="${t("quick.tomorrow")}">${t("quick.tomorrow")}</button>` : ""}<button class="more-button" aria-label="${t("task.edit")}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+    <div class="card-actions">${archived ? `<button class="postpone-btn" data-restore="${escapeHtml(task.id)}">${t("common.restore")}</button>` : overdue ? `<button class="postpone-btn" data-postpone="${escapeHtml(task.id)}" title="${escapeHtml(t("quick.tomorrow"))}">${t("quick.tomorrow")}</button>` : ""}<button class="more-button" aria-label="${t("task.edit")}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
   </article>`;
 }
 
@@ -563,7 +702,6 @@ function bindDynamicEvents() {
     if (task?.archivedAt) return;
     card.addEventListener("dragstart", (event) => {
       draggedTaskId = card.dataset.taskId;
-      draggedOccurrenceDate = card.dataset.occurrenceDate;
       card.classList.add("dragging");
       elements.trashDropZone.hidden = false;
       elements.addButton.hidden = true;
@@ -608,7 +746,6 @@ function makeDateDropTarget(element, date) {
 
 function clearDragState() {
   draggedTaskId = "";
-  draggedOccurrenceDate = "";
   elements.trashDropZone.hidden = true;
   elements.trashDropZone.classList.remove("active");
   elements.trashDropZone.querySelector("span").textContent = t("drag.delete");
@@ -626,7 +763,7 @@ async function rescheduleTask(id, date) {
   await persist();
   state.selectedDate = date;
   render();
-  showToast(`Auf ${formatLongDate(parseDate(date))} verschoben`);
+  showToast(t("toast.moved", { date: formatLongDate(parseDate(date)) }));
 }
 
 async function reorderTask(sourceId, targetId, targetDate) {
@@ -645,7 +782,7 @@ async function reorderTask(sourceId, targetId, targetDate) {
   ordered.forEach((task, index) => { task.manualOrder = index; task.updatedAt = Date.now(); });
   await persist();
   render();
-  showToast("Reihenfolge gespeichert");
+  showToast(t("toast.reordered"));
 }
 
 function navigateDate(direction) {
@@ -691,9 +828,7 @@ function openTaskSheet(id = "") {
   delete elements.deleteTask.dataset.confirm;
   elements.smartHint.textContent = t("task.smartHint");
   elements.smartHint.classList.remove("detected");
-  elements.taskSheet.hidden = false;
-  elements.taskBackdrop.hidden = false;
-  requestAnimationFrame(() => elements.taskTitle.focus());
+  openDialog(elements.taskSheet, elements.taskBackdrop, elements.taskTitle);
 }
 
 function renderDependencyOptions(task, query = "") {
@@ -743,15 +878,14 @@ function unresolvedDependencies(task, occurrenceDate) {
 }
 
 function closeTaskSheet() {
-  elements.taskSheet.hidden = true;
-  elements.taskBackdrop.hidden = true;
+  closeDialog(elements.taskSheet);
 }
 
 function addSubtaskRow(subtask = {}) {
   const row = document.createElement("div");
   row.className = "subtask-row";
   row.dataset.id = subtask.id || crypto.randomUUID();
-  row.innerHTML = `<input type="checkbox" aria-label="${t("common.done")}" ${subtask.completed ? "checked" : ""}><input type="text" maxlength="120" placeholder="${t("task.stepPlaceholder")}" value="${escapeHtml(subtask.title || "")}"><button class="remove-subtask" type="button" aria-label="Remove">×</button>`;
+  row.innerHTML = `<input type="checkbox" aria-label="${escapeHtml(t("common.done"))}" ${subtask.completed ? "checked" : ""}><input type="text" maxlength="120" placeholder="${escapeHtml(t("task.stepPlaceholder"))}" value="${escapeHtml(subtask.title || "")}"><button class="remove-subtask" type="button" aria-label="${escapeHtml(t("aria.removeStep"))}">×</button>`;
   row.querySelector(".remove-subtask").addEventListener("click", () => row.remove());
   elements.subtaskList.append(row);
   if (!subtask.title) row.querySelector('input[type="text"]').focus();
@@ -825,6 +959,7 @@ async function deleteTaskWithUndo(id) {
     .filter((item) => (item.dependencyIds || []).includes(id))
     .map((item) => ({ id: item.id, dependencyIds: [...item.dependencyIds] }));
   lastDeletedTask = { task, index, dependentSnapshots };
+  state.deletions = { ...state.deletions, [id]: Date.now() };
   state.tasks.splice(index, 1);
   state.tasks.forEach((item) => {
     if (!(item.dependencyIds || []).includes(id)) return;
@@ -840,6 +975,9 @@ async function undoLastDelete() {
   if (!lastDeletedTask || state.tasks.some((task) => task.id === lastDeletedTask.task.id)) return;
   const snapshot = lastDeletedTask;
   lastDeletedTask = null;
+  delete state.deletions[snapshot.task.id];
+  // Beat any tombstone another device may already have synced for this task.
+  snapshot.task.updatedAt = Date.now();
   state.tasks.splice(Math.min(snapshot.index, state.tasks.length), 0, snapshot.task);
   snapshot.dependentSnapshots.forEach((dependent) => {
     const task = state.tasks.find((item) => item.id === dependent.id);
@@ -1009,22 +1147,6 @@ function latestOccurrenceBefore(task, before) {
   return "";
 }
 
-function occursOn(task, value) {
-  if (value < task.date) return false;
-  if (!task.repeat || task.repeat === "none") return task.date === value;
-  const start = parseDate(task.date);
-  const date = parseDate(value);
-  const difference = Math.round((date - start) / 86400000);
-  if (task.repeat === "daily") return true;
-  if (task.repeat === "weekly") return difference % 7 === 0;
-  if (task.repeat === "monthly") return start.getDate() === date.getDate();
-  return false;
-}
-
-function isOccurrenceComplete(task, date) {
-  return task.repeat && task.repeat !== "none" ? (task.completionDates || []).includes(date) : Boolean(task.completed);
-}
-
 function sortTasks(a, b) {
   if (Number.isFinite(a.manualOrder) && Number.isFinite(b.manualOrder) && a.manualOrder !== b.manualOrder) return a.manualOrder - b.manualOrder;
   const priorityOrder = { high: 0, medium: 1, low: 2 };
@@ -1088,15 +1210,14 @@ function applyTheme() {
 
 function openInfo() {
   elements.languageSelect.value = state.language;
-  elements.autoArchiveDays.value = String(state.autoArchiveDays);
+  elements.autoArchiveValue.value = String(state.autoArchiveValue);
+  elements.autoArchiveUnit.value = state.autoArchiveUnit;
   renderCategorySettings();
-  elements.infoSheet.hidden = false;
-  elements.infoBackdrop.hidden = false;
+  openDialog(elements.infoSheet, elements.infoBackdrop, elements.closeInfo);
 }
 
 function closeInfo() {
-  elements.infoSheet.hidden = true;
-  elements.infoBackdrop.hidden = true;
+  closeDialog(elements.infoSheet);
 }
 
 function populateCategorySelect(selected = elements.taskCategory.value) {
@@ -1106,9 +1227,9 @@ function populateCategorySelect(selected = elements.taskCategory.value) {
 
 function renderCategorySettings() {
   elements.categoryList.innerHTML = state.categories.map((category) => `<div class="category-setting" data-category-id="${escapeHtml(category.id)}">
-    <input type="color" value="${validColor(category.color) ? category.color : "#4f8b69"}" aria-label="Color for ${escapeHtml(categoryLabel(category))}">
-    <input type="text" value="${escapeHtml(categoryLabel(category))}" maxlength="32" aria-label="Category name">
-    <button type="button" aria-label="Bereich löschen">×</button>
+    <input type="color" value="${validColor(category.color) ? category.color : "#4f8b69"}" aria-label="${escapeHtml(t("aria.categoryColor", { name: categoryLabel(category) }))}">
+    <input type="text" value="${escapeHtml(categoryLabel(category))}" maxlength="32" aria-label="${escapeHtml(t("aria.categoryName"))}">
+    <button type="button" aria-label="${escapeHtml(t("aria.deleteCategory"))}">×</button>
   </div>`).join("");
   elements.categoryList.querySelectorAll(".category-setting").forEach((row) => {
     const id = row.dataset.categoryId;
@@ -1118,8 +1239,11 @@ function renderCategorySettings() {
       render();
     });
     row.querySelector('input[type="text"]').addEventListener("change", async (event) => {
-      getCategory(id).label = event.target.value.trim() || "Bereich";
-      getCategory(id).isDefault = false;
+      const category = getCategory(id);
+      const label = event.target.value.trim() || t("category.fallback");
+      category.label = label;
+      // Keep translating the built-in names until the user actually renames one.
+      if (label !== t(`category.${id}`)) category.isDefault = false;
       populateCategorySelect();
       await persist();
       render();
@@ -1129,7 +1253,7 @@ function renderCategorySettings() {
 }
 
 async function addCategory() {
-  const category = { id: crypto.randomUUID(), label: `${state.language === "en" ? "Category" : "Bereich"} ${state.categories.length + 1}`, color: "#4f8b69", isDefault: false };
+  const category = { id: crypto.randomUUID(), label: `${t("category.fallback")} ${state.categories.length + 1}`, color: "#4f8b69", isDefault: false };
   state.categories.push(category);
   populateCategorySelect(category.id);
   renderCategorySettings();
@@ -1137,15 +1261,19 @@ async function addCategory() {
 }
 
 async function deleteCategory(id) {
-  if (state.categories.length === 1) return showToast("Mindestens ein Bereich muss bleiben");
+  if (state.categories.length === 1) return showToast(t("toast.categoryMin"));
   const fallback = state.categories.find((category) => category.id !== id);
   state.categories = state.categories.filter((category) => category.id !== id);
-  state.tasks.forEach((task) => { if (task.category === id) task.category = fallback.id; });
+  state.tasks.forEach((task) => {
+    if (task.category !== id) return;
+    task.category = fallback.id;
+    task.updatedAt = Date.now();
+  });
   populateCategorySelect(fallback.id);
   renderCategorySettings();
   await persist();
   render();
-  showToast("Bereich entfernt, Aufgaben wurden verschoben");
+  showToast(t("toast.categoryRemoved"));
 }
 
 function getCategory(id) {
@@ -1153,8 +1281,9 @@ function getCategory(id) {
 }
 
 function autoArchiveTasks() {
-  if (!state.autoArchiveDays) return false;
-  const cutoff = Date.now() - state.autoArchiveDays * 86400000;
+  const delay = autoArchiveDelayMs(state);
+  if (!delay) return false;
+  const cutoff = Date.now() - delay;
   let changed = false;
   state.tasks.forEach((task) => {
     if (!task.archivedAt && task.repeat === "none" && task.completed && Number(task.completedAt) && task.completedAt <= cutoff) {
@@ -1167,7 +1296,7 @@ function autoArchiveTasks() {
 }
 
 function exportBackup() {
-  const backup = { version: 3, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays };
+  const backup = { version: 3, exportedAt: new Date().toISOString(), tasks: state.tasks, categories: state.categories, deletions: state.deletions, theme: state.theme, language: state.language, autoArchiveValue: state.autoArchiveValue, autoArchiveUnit: state.autoArchiveUnit };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1175,7 +1304,7 @@ function exportBackup() {
   link.download = `planbar-backup-${todayString()}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast("Backup exportiert");
+  showToast(t("toast.exported"));
 }
 
 async function importBackup(event) {
@@ -1185,23 +1314,25 @@ async function importBackup(event) {
   try {
     const imported = JSON.parse(await file.text());
     if (!Array.isArray(imported.tasks)) throw new Error("invalid");
-    const merged = new Map(state.tasks.map((task) => [task.id, task]));
-    imported.tasks.map(normalizeTask).forEach((task) => {
-      const existing = merged.get(task.id);
-      if (!existing || task.updatedAt >= existing.updatedAt) merged.set(task.id, task);
-    });
-    state.tasks = [...merged.values()];
-    if (Array.isArray(imported.categories) && imported.categories.length) state.categories = imported.categories.map(normalizeCategory);
+    const restored = mergeTaskLists(state.tasks, imported.tasks);
+    // An explicit restore outranks tombstones for the tasks it contains.
+    for (const task of imported.tasks) delete state.deletions[safeId(task?.id)];
+    state.tasks = applyDeletions(restored, state.deletions);
     if (["de", "en"].includes(imported.language)) state.language = imported.language;
-    if ([0, 30, 90].includes(Number(imported.autoArchiveDays))) state.autoArchiveDays = Number(imported.autoArchiveDays);
+    if (Array.isArray(imported.categories) && imported.categories.length) state.categories = imported.categories.map(normalizeCategory);
+    if (imported.autoArchiveValue != null || imported.autoArchiveDays != null) {
+      const archiveConfig = autoArchiveConfig(imported);
+      state.autoArchiveValue = archiveConfig.value;
+      state.autoArchiveUnit = archiveConfig.unit;
+    }
     await persist();
     applyLanguage();
     populateCategorySelect();
     renderCategorySettings();
     render();
-    showToast(`${imported.tasks.length} Aufgaben importiert`);
+    showToast(t("toast.imported", { count: imported.tasks.length }));
   } catch {
-    showToast("Backup konnte nicht gelesen werden");
+    showToast(t("toast.importFailed"));
   }
 }
 
@@ -1209,17 +1340,17 @@ function openFocus(taskId = "") {
   const today = todayString();
   const open = state.tasks.filter((task) => !task.archivedAt && !unresolvedDependencies(task, today).length && (task.repeat === "none" ? !task.completed : occursOn(task, today) && !isOccurrenceComplete(task, today))).sort(sortTasks);
   elements.focusTask.innerHTML = open.length
-    ? open.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")
-    : `<option value="">${state.language === "en" ? "No open task" : "Keine offene Aufgabe"}</option>`;
-  if (open.some((task) => task.id === taskId)) elements.focusTask.value = taskId;
-  elements.focusSheet.hidden = false;
-  elements.focusBackdrop.hidden = false;
+    ? open.map((task) => `<option value="${escapeHtml(task.id)}">${escapeHtml(task.title)}</option>`).join("")
+    : `<option value="">${escapeHtml(t("focus.noOpenTask"))}</option>`;
+  const preselect = taskId || focusPendingTaskId;
+  if (open.some((task) => task.id === preselect)) elements.focusTask.value = preselect;
+  focusPendingTaskId = "";
+  openDialog(elements.focusSheet, elements.focusBackdrop, elements.startTimer);
   updateTimerDisplay();
 }
 
 function closeFocus() {
-  elements.focusSheet.hidden = true;
-  elements.focusBackdrop.hidden = true;
+  closeDialog(elements.focusSheet);
 }
 
 function setTimerMode(mode) {
@@ -1228,10 +1359,12 @@ function setTimerMode(mode) {
   focusState.mode = mode;
   focusState.total = mode === "focus" ? 25 * 60 : 5 * 60;
   focusState.remaining = focusState.total;
+  focusState.deadline = 0;
   elements.timerTabs.forEach((button) => button.classList.toggle("active", button.dataset.timerMode === mode));
   elements.startTimer.textContent = t("focus.start");
   elements.timerStatus.textContent = t("focus.ready");
   updateTimerDisplay();
+  saveFocusSession();
 }
 
 function toggleTimer() {
@@ -1239,14 +1372,17 @@ function toggleTimer() {
   else startTimer();
 }
 
-function startTimer() {
-  if (focusState.remaining <= 0) focusState.remaining = focusState.total;
+function startTimer(resume = false) {
+  if (!resume) {
+    if (focusState.remaining <= 0) focusState.remaining = focusState.total;
+    focusState.deadline = Date.now() + focusState.remaining * 1000;
+  }
   focusState.running = true;
-  focusState.deadline = Date.now() + focusState.remaining * 1000;
   elements.startTimer.textContent = t("focus.pause");
   elements.timerStatus.textContent = t(focusState.mode === "focus" ? "focus.working" : "focus.breathe");
   clearInterval(focusState.interval);
   focusState.interval = setInterval(tickTimer, 250);
+  if (!resume) saveFocusSession();
 }
 
 function pauseTimer() {
@@ -1256,15 +1392,18 @@ function pauseTimer() {
   elements.startTimer.textContent = t("focus.resume");
   elements.timerStatus.textContent = t("focus.paused");
   updateTimerDisplay();
+  saveFocusSession();
 }
 
 function resetTimer() {
   focusState.running = false;
   clearInterval(focusState.interval);
   focusState.remaining = focusState.total;
+  focusState.deadline = 0;
   elements.startTimer.textContent = t("focus.start");
   elements.timerStatus.textContent = t("focus.ready");
   updateTimerDisplay();
+  saveFocusSession();
 }
 
 function tickTimer() {
@@ -1273,12 +1412,58 @@ function tickTimer() {
   if (focusState.remaining > 0) return;
   focusState.running = false;
   clearInterval(focusState.interval);
-  elements.startTimer.textContent = state.language === "en" ? "Again" : "Nochmal";
+  elements.startTimer.textContent = t("focus.again");
   elements.timerStatus.textContent = t("focus.done");
+  // The service worker owns the notification so a closed side panel still reports the round.
+  showToast(focusMessage());
+}
+
+function focusMessage() {
   const task = state.tasks.find((item) => item.id === elements.focusTask.value);
-  const message = focusState.mode === "focus" ? `Fokusrunde beendet${task ? `: ${task.title}` : ""}` : "Pause beendet – bereit für die nächste Runde?";
-  if (globalThis.chrome?.notifications) chrome.notifications.create(`planbar-focus-${Date.now()}`, { type: "basic", iconUrl: "assets/icon-128.png", title: "Planbar Fokus", message });
-  showToast(message);
+  if (focusState.mode !== "focus") return t("focus.breakDone");
+  return task ? t("focus.roundDoneTask", { title: task.title }) : t("focus.roundDone");
+}
+
+// The side panel unloads when it closes, so the session lives in storage and finishes on an alarm.
+async function saveFocusSession() {
+  if (!globalThis.chrome?.storage?.local) return;
+  await chrome.storage.local.set({
+    [FOCUS_KEY]: {
+      mode: focusState.mode,
+      total: focusState.total,
+      remaining: focusState.remaining,
+      running: focusState.running,
+      deadline: focusState.deadline,
+      taskId: elements.focusTask.value || "",
+    },
+  });
+  if (!globalThis.chrome.alarms) return;
+  if (focusState.running && focusState.deadline > Date.now()) await chrome.alarms.create(FOCUS_ALARM, { when: focusState.deadline });
+  else await chrome.alarms.clear(FOCUS_ALARM);
+}
+
+async function restoreFocusSession() {
+  if (!globalThis.chrome?.storage?.local) return;
+  const stored = (await chrome.storage.local.get(FOCUS_KEY))[FOCUS_KEY];
+  if (!stored) return;
+  focusState.mode = stored.mode === "break" ? "break" : "focus";
+  focusState.total = Number(stored.total) || (focusState.mode === "focus" ? 25 * 60 : 5 * 60);
+  focusState.deadline = Number(stored.deadline) || 0;
+  focusPendingTaskId = safeId(stored.taskId);
+  elements.timerTabs.forEach((button) => button.classList.toggle("active", button.dataset.timerMode === focusState.mode));
+  if (stored.running && focusState.deadline > Date.now()) {
+    focusState.remaining = Math.ceil((focusState.deadline - Date.now()) / 1000);
+    startTimer(true);
+    return;
+  }
+  if (stored.running) {
+    focusState.remaining = 0;
+    elements.startTimer.textContent = t("focus.again");
+    elements.timerStatus.textContent = t("focus.done");
+  } else {
+    focusState.remaining = Number(stored.remaining) || focusState.total;
+  }
+  updateTimerDisplay();
 }
 
 function updateTimerDisplay() {
@@ -1312,25 +1497,50 @@ function showToast(message, options = {}) {
 
 async function loadData() {
   try {
-    if (!globalThis.chrome?.storage?.local) return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    if (!globalThis.chrome?.storage?.local) return snapshotOf(JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"));
     const localResult = await chrome.storage.local.get(STORAGE_KEY);
     const localData = localResult[STORAGE_KEY] || {};
     try {
       const sync = await chrome.storage.sync.get(null);
       const meta = sync[SYNC_META_KEY];
-      if (!meta) return localData;
-      const tasks = Object.entries(sync).filter(([key]) => key.startsWith(SYNC_TASK_PREFIX)).map(([, task]) => task);
-      return { ...localData, ...meta, tasks, version: 3 };
+      if (!meta) return snapshotOf(localData);
+      const syncTasks = Object.entries(sync).filter(([key]) => key.startsWith(SYNC_TASK_PREFIX)).map(([, task]) => task);
+      // Sync is a peer, not the authority: a partial or lagging sync store must never drop local tasks.
+      const remoteIsNewer = (Number(meta.updatedAt) || 0) > (Number(localData.updatedAt) || 0);
+      const base = remoteIsNewer ? { ...localData, ...meta } : { ...meta, ...localData };
+      return snapshotOf({ ...base, version: 3, tasks: mergeTaskLists(localData.tasks, syncTasks), deletions: mergeDeletions(localData.deletions, meta.deletions) });
     } catch {
-      return localData;
+      return snapshotOf(localData);
     }
   } catch {
-    return {};
+    return snapshotOf({});
   }
 }
 
+function snapshotOf(saved) {
+  const deletions = pruneDeletions(saved.deletions);
+  return { ...saved, deletions, tasks: applyDeletions(mergeTaskLists(saved.tasks), deletions) };
+}
+
 async function persist() {
-  const value = { version: 3, tasks: state.tasks, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: Date.now() };
+  if (globalThis.chrome?.storage?.local) {
+    const stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
+    // Another context may have written since we last saw storage — fold that in rather than overwrite it.
+    if (stored && (Number(stored.updatedAt) || 0) !== lastWriteStamp) applySnapshot(mergeIntoState(stored));
+  }
+  state.deletions = pruneDeletions(state.deletions);
+  lastWriteStamp = Date.now();
+  const value = {
+    version: 3,
+    tasks: state.tasks,
+    categories: state.categories,
+    deletions: state.deletions,
+    theme: state.theme,
+    language: state.language,
+    autoArchiveValue: state.autoArchiveValue,
+    autoArchiveUnit: state.autoArchiveUnit,
+    updatedAt: lastWriteStamp,
+  };
   if (!globalThis.chrome?.storage?.local) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
     return;
@@ -1338,38 +1548,34 @@ async function persist() {
   await chrome.storage.local.set({ [STORAGE_KEY]: value });
   try {
     const sync = await chrome.storage.sync.get(null);
-    const taskEntries = Object.fromEntries(state.tasks.map((task) => [`${SYNC_TASK_PREFIX}${task.id}`, task]));
-    const staleKeys = Object.keys(sync).filter((key) => key.startsWith(SYNC_TASK_PREFIX) && !taskEntries[key]);
-    if (staleKeys.length) await chrome.storage.sync.remove(staleKeys);
+    const taskEntries = Object.fromEntries(tasksForSync().map((task) => [`${SYNC_TASK_PREFIX}${task.id}`, task]));
+    // Write first, prune second: a failed write then leaves the previous sync payload intact.
     await chrome.storage.sync.set({
-      [SYNC_META_KEY]: { version: 3, categories: state.categories, theme: state.theme, language: state.language, autoArchiveDays: state.autoArchiveDays, updatedAt: value.updatedAt },
+      [SYNC_META_KEY]: { version: 3, categories: state.categories, deletions: state.deletions, theme: state.theme, language: state.language, autoArchiveValue: state.autoArchiveValue, autoArchiveUnit: state.autoArchiveUnit, updatedAt: value.updatedAt },
       ...taskEntries,
     });
+    const staleKeys = Object.keys(sync).filter((key) => key.startsWith(SYNC_TASK_PREFIX) && !taskEntries[key]);
+    if (staleKeys.length) await chrome.storage.sync.remove(staleKeys);
   } catch (error) {
-    console.warn("Planbar Sync nicht verfügbar; lokal wurde gespeichert.", error);
+    console.warn("Planbar: Chrome Sync unavailable, data was saved locally.", error);
+    warnSyncLimit();
   }
-  chrome.runtime?.sendMessage({ type: "PLANBAR_RESCHEDULE_REMINDERS" }).catch(() => {});
 }
 
-function todayString() { return dateString(new Date()); }
-function dateString(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function tasksForSync() {
+  if (state.tasks.length <= SYNC_TASK_LIMIT) return state.tasks;
+  warnSyncLimit();
+  const active = state.tasks.filter((task) => !task.archivedAt);
+  if (active.length <= SYNC_TASK_LIMIT) return active;
+  return [...active].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, SYNC_TASK_LIMIT);
 }
-function parseDate(value) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day, 12);
+
+function warnSyncLimit() {
+  if (syncLimitWarned) return;
+  syncLimitWarned = true;
+  showToast(t("toast.syncPaused"));
 }
-function addDays(date, days) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-function startOfWeek(date) {
-  const result = new Date(date);
-  const day = result.getDay() || 7;
-  result.setDate(result.getDate() - day + 1);
-  return result;
-}
+
 function sameDay(a, b) { return dateString(a) === dateString(b); }
 function formatLongDate(date) { return capitalize(date.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })); }
 function formatShortDate(date) { return date.toLocaleDateString(locale(), { day: "2-digit", month: "2-digit" }); }
@@ -1392,7 +1598,6 @@ function daySummary(total, completed) {
   if (total === completed) return t("hero.complete");
   return t(total - completed === 1 ? "hero.waitingOne" : "hero.waitingMany", { count: total - completed });
 }
-function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 function capitalize(value) { return value.charAt(0).toUpperCase() + value.slice(1); }
 function validColor(value) { return /^#[0-9a-f]{6}$/i.test(String(value || "")); }
 function escapeHtml(value = "") {
