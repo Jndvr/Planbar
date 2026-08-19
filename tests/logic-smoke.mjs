@@ -94,6 +94,7 @@ assert.equal(run(`normalizeTask({title:"x", date:"<img src=x>"}).date`), run("to
 assert.equal(run(`normalizeTask({title:"x", date:"2026-02-30"}).date`), run("todayString()"));
 assert.equal(run(`normalizeTask({title:"x", time:"99:99"}).time`), "");
 assert.equal(run(`normalizeTask({title:"x", reminder:"evil"}).reminder`), "none");
+assert.equal(run(`normalizeTask({title:"x", notes:"n".repeat(6000)}).notes.length`), 5000);
 assert.equal(run(`normalizeTask({title:"x", dependencyIds:['bad"id', "good-id"]}).dependencyIds.join()`), "good-id");
 assert.equal(run(`normalizeTask({title:"x", completionDates:["2026-01-01","nope"]}).completionDates.join()`), "2026-01-01");
 
