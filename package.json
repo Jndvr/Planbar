@@ -1,6 +1,6 @@
 {
   "name": "planbar-chrome-extension",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Moderner Todo-Planer für Chrome mit Tages-, Wochen- und Monatsansicht.",
   "license": "MIT",
   "private": true,

@@ -20,7 +20,7 @@ Planbar combines a fast todo list with daily, weekly, and monthly planning. The 
 
 - Daily, weekly, and monthly views
 - Side Panel and full-tab modes
-- Dates, times, priorities, categories, and notes
+- Dates, times, priorities, categories, and long-form notes up to 5,000 characters
 - Subtasks with individual progress
 - Task dependencies that block completion until prerequisite tasks are done
 - Daily, weekly, and monthly recurring tasks

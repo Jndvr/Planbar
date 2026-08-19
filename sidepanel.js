@@ -10,6 +10,7 @@ const { t: translate, apply: applyTranslations } = globalThis.PlanbarI18n;
 const SYNC_TASK_LIMIT = 400;
 const DELETION_RETENTION_DAYS = 60;
 const DELETION_LIMIT = 150;
+const MAX_NOTES_LENGTH = 5000;
 
 const DEFAULT_CATEGORIES = [
   { id: "work", label: "Arbeit", color: "#4f8b69", isDefault: true },
@@ -162,7 +163,7 @@ function normalizeTask(task) {
     category: safeId(task.category) || "other",
     repeat: ["none", "daily", "weekly", "monthly"].includes(task.repeat) ? task.repeat : "none",
     reminder: safeReminder(task.reminder),
-    notes: String(task.notes || "").slice(0, 500),
+    notes: String(task.notes || "").slice(0, MAX_NOTES_LENGTH),
     subtasks: Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({
       id: safeId(item.id) || crypto.randomUUID(),
       title: String(item.title || "").slice(0, 120),
